@@ -197,6 +197,8 @@ let micDetail = "";
 let micMelodyDb = -120;
 let micDroneDb = -120;
 let micError = "";
+let micEnergy = 0;
+let micPermission = "unknown";
 let micPromise = null;
 let micStream = null;
 let wakeLock = null;
@@ -929,7 +931,9 @@ function stopMic() {
   micDetail = "";
   micMelodyDb = -120;
   micDroneDb = -120;
+  micEnergy = 0;
   micError = "";
+  micPromise = null;
   micStream?.getTracks().forEach((t) => t.stop());
   micStream = null;
   setMicButton(false);
@@ -943,11 +947,12 @@ function startMic(fromGesture) {
   keepAwake();
   const resume = audioCtx.resume();
   if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
-    if (fromGesture) sayMic("Open the https link. iPhone keeps the mic closed on http.");
+    micPermission = navigator.mediaDevices?.getUserMedia ? "insecure" : "unsupported";
+    if (fromGesture) sayMic("Open the https link. This address keeps the mic closed.");
     return Promise.resolve(false);
   }
   const generation = ++micGeneration;
-  micPromise = navigator.mediaDevices
+  const pending = navigator.mediaDevices
     .getUserMedia({
       audio: {
         echoCancellation: { ideal: false },
@@ -962,18 +967,24 @@ function startMic(fromGesture) {
       }
       micStream = stream;
       resume.catch(() => {});
+      micPermission = "granted";
       return openMic(stream);
     })
-    .catch(() => {
-      if (generation === micGeneration && fromGesture) {
-        sayMic("The microphone stayed closed. Allow it when the browser asks.");
-      }
+    .catch((error) => {
+      if (generation !== micGeneration || !fromGesture) return false;
+      const name = error?.name || "";
+      if (name === "NotFoundError" || name === "OverconstrainedError") micPermission = "missing";
+      else if (name === "NotReadableError" || name === "AbortError") micPermission = "busy";
+      else micPermission = "denied";
+      micError = name;
+      if (fromGesture) sayMic("The microphone stayed closed. Allow it when the browser asks.");
       return false;
-    })
-    .finally(() => {
-      micPromise = null;
     });
-  return micPromise;
+  const tracked = pending.finally(() => {
+    if (micPromise === tracked) micPromise = null;
+  });
+  micPromise = tracked;
+  return tracked;
 }
 
 function toggleMic() {
@@ -1006,6 +1017,7 @@ function openMic(stream) {
     let energy = 0;
     for (let i = 0; i < time.length; i += 8) energy += time[i] * time[i];
     energy = Math.sqrt(energy / (time.length / 8));
+    micEnergy = energy;
     if (energy < 0.015) {
       micCovers = null;
       micDrone = false;
@@ -1063,6 +1075,7 @@ function listenForMicGesture() {
       window.removeEventListener("keydown", kick, true);
       return;
     }
+    if (event.target?.closest?.("#menu-panel")) return;
     if (event.target?.closest?.("#mic, #free-mic")) eatMicClick = true;
     window.removeEventListener("pointerdown", kick, true);
     window.removeEventListener("keydown", kick, true);
@@ -1765,7 +1778,8 @@ window.addEventListener("keydown", (e) => {
   if ($("menu-panel").open) {
     if (e.code === "Escape") {
       e.preventDefault();
-      closeMenu();
+      if (menuPage === "root") closeMenu();
+      else showMenu(menuParent[menuPage] || "root");
     }
     return;
   }
@@ -1876,14 +1890,233 @@ function buildLabel() {
   }
 }
 
+const PAGES_URL = "https://kickiniteasy.github.io/flute-hero/";
+const menuParent = { settings: "root", microphone: "settings" };
+const menuTitle = { root: "Menu", settings: "Settings", microphone: "Microphone" };
+let menuPage = "root";
+let micWatch = 0;
+
+function placeKind() {
+  const ua = navigator.userAgent || "";
+  const iPhone = /iPhone/.test(ua);
+  const iPad = /iPad/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const iOS = iPhone || iPad || /iPod/.test(ua);
+  const android = /Android/i.test(ua);
+  const mobile = iOS || android || /Mobile/i.test(ua);
+  let browser = "This browser";
+  if (/Edg\/|EdgiOS/.test(ua)) browser = "Edge";
+  else if (/CriOS|Chrome\//.test(ua)) browser = "Chrome";
+  else if (/FxiOS|Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua)) browser = "Safari";
+  const host = location.hostname;
+  const local = host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.endsWith(".local") || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host);
+  return {
+    iOS,
+    mobile,
+    browser,
+    safari: browser === "Safari",
+    host: location.host,
+    local,
+    github: host.endsWith("github.io"),
+    https: location.protocol === "https:",
+    secure: window.isSecureContext,
+  };
+}
+
+function deviceLabel(place) {
+  if (/iPhone/.test(navigator.userAgent || "")) return "iPhone";
+  if (place.iOS) return "iPad";
+  if (/Android/i.test(navigator.userAgent || "")) return "Android";
+  if (place.mobile) return "Phone";
+  return "Computer";
+}
+
+function addressLabel(place) {
+  if (!place.https && place.secure) return "http on this computer, treated as safe";
+  if (!place.https) return place.local ? "http, on this computer" : "http";
+  if (place.github) return "https, on GitHub";
+  if (place.local) return "https, on this computer";
+  return "https";
+}
+
+function permissionLabel() {
+  if (micOn) return "On";
+  if (micPermission === "granted") return "Allowed, currently off";
+  if (micPermission === "denied") return "Blocked";
+  if (micPermission === "missing") return "No microphone found";
+  if (micPermission === "busy") return "In use by something else";
+  if (micPermission === "insecure") return "Closed on this address";
+  if (micPermission === "unsupported") return "This browser cannot ask";
+  return "Not asked yet";
+}
+
+function micFix(place) {
+  const browser = place.iOS && place.safari ? "Mobile Safari" : place.browser;
+  const where = `${deviceLabel(place)}, ${browser}. The address is ${addressLabel(place)} (${place.host}).`;
+  if (micPermission === "unsupported") {
+    return `${where} This browser has no microphone for a web page. That cannot be fixed here. Open ${PAGES_URL} in Safari or Chrome.`;
+  }
+  if (!place.secure || micPermission === "insecure") {
+    const local = place.local
+      ? " A local https page works only after this device trusts its certificate. If the browser says the connection is not private, the microphone stays closed."
+      : "";
+    return `${where} The microphone stays closed because this is not a trusted https page. That cannot be fixed on this address. Open ${PAGES_URL} instead.${local}`;
+  }
+  if (micOn) {
+    return `${where} The microphone is on. Play a note. The bar should rise, and a note name should appear when the pitch is loud enough.`;
+  }
+  if (micPermission === "missing") {
+    return `${where} The page may ask, but no microphone was found. On a computer, plug one in and choose it as the input. On a phone, leave this page and come back, then tap Ask again.`;
+  }
+  if (micPermission === "busy") {
+    return `${where} Another app is holding the microphone. Close other recording apps, then tap Ask again.`;
+  }
+  if (micPermission === "denied") {
+    if (place.iOS && place.safari) {
+      return `${where} Safari blocked this site. Tap Ask again. If no prompt appears, it was already denied. Tap the page menu on the left of the address bar, then More, then Website Settings, and set Microphone to Ask. Also set Settings → Apps → Safari → Microphone to Ask, not Deny. Then tap Ask again.`;
+    }
+    if (place.iOS) {
+      return `${where} This is not Safari. Open Settings → Apps → ${place.browser} and turn Microphone on, then tap Ask again. If it still stays closed, open ${PAGES_URL} in Safari.`;
+    }
+    if (place.safari) {
+      return `${where} Safari blocked this site. Tap Ask again. If no prompt appears, open Safari → Settings → Websites → Microphone and set this site to Allow.`;
+    }
+    if (place.browser === "Chrome") {
+      return `${where} Chrome blocked this site. Tap the lock or controls icon in the address bar, set Microphone to Allow, then tap Ask again.`;
+    }
+    return `${where} The browser blocked this site. Tap Ask again and choose Allow. If no prompt appears, allow the microphone for this site in the browser's site settings, then tap Ask again.`;
+  }
+  if (micPermission === "granted") {
+    return `${where} The microphone is allowed, and it is off. Tap Ask again to turn it on.`;
+  }
+  if (place.iOS && place.safari && place.local) {
+    return `${where} Tap Ask again and choose Allow. This local address works only if the phone already trusts its certificate. If the prompt never comes, use ${PAGES_URL}.`;
+  }
+  if (place.iOS && !place.safari) {
+    return `${where} Tap Ask again. ${place.browser} on an iPhone also needs Settings → Apps → ${place.browser} → Microphone on. The sure path is ${PAGES_URL} in Safari.`;
+  }
+  return `${where} Tap Ask again and choose Allow. The browser should ask once, then remember this site.`;
+}
+
+function paintMicFacts() {
+  const place = placeKind();
+  const rows = [
+    ["Device", deviceLabel(place)],
+    ["Browser", place.iOS && place.safari ? "Mobile Safari" : place.browser],
+    ["Address", addressLabel(place)],
+    ["Microphone", permissionLabel()],
+  ];
+  $("mic-facts").replaceChildren(
+    ...rows.map(([name, value]) => {
+      const row = document.createElement("div");
+      row.className = "mic-fact";
+      const dt = document.createElement("dt");
+      dt.textContent = name;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      row.append(dt, dd);
+      return row;
+    }),
+  );
+  $("mic-fix").textContent = micFix(place);
+}
+
+function paintMicTest() {
+  if (!micOn) {
+    $("mic-test-state").textContent = "Off";
+    $("mic-test-note").textContent = "The microphone is off, so there is nothing to hear yet.";
+    $("mic-meter-bar").style.width = "0%";
+    return;
+  }
+  const level = Math.max(0, Math.min(1, micEnergy / 0.12));
+  $("mic-test-state").textContent = micLabel ? `On · ${micLabel}` : "On · quiet";
+  $("mic-test-note").textContent = micDetail || "Listening";
+  $("mic-meter-bar").style.width = `${Math.round(level * 100)}%`;
+}
+
+function watchMic() {
+  cancelAnimationFrame(micWatch);
+  const tick = () => {
+    if (!$("menu-panel").open || menuPage !== "microphone") return;
+    paintMicTest();
+    micWatch = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+async function refreshMicPermission() {
+  if (micOn) {
+    micPermission = "granted";
+    return;
+  }
+  if (!window.isSecureContext) {
+    micPermission = navigator.mediaDevices?.getUserMedia ? "insecure" : "unsupported";
+    return;
+  }
+  if (!navigator.permissions?.query) return;
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" });
+    if (status.state === "granted") micPermission = "granted";
+    else if (status.state === "denied") micPermission = "denied";
+    else if (micPermission === "denied" || micPermission === "granted") micPermission = "unknown";
+  } catch {
+    /* Safari does not report microphone permission this way. */
+  }
+}
+
+function showMenu(page) {
+  menuPage = page;
+  for (const el of document.querySelectorAll("[data-menu]")) {
+    el.classList.toggle("hidden", el.dataset.menu !== page);
+  }
+  $("menu-heading").textContent = menuTitle[page] || "Menu";
+  $("menu-back").classList.toggle("hidden", page === "root");
+  if (page === "microphone") {
+    paintMicFacts();
+    paintMicTest();
+    watchMic();
+    refreshMicPermission().then(() => {
+      if (menuPage === "microphone") paintMicFacts();
+    });
+  }
+}
+
+function goSongs() {
+  if (freeRunning) leaveFree();
+  else if (song) stopSong();
+  else showScreen("screen-select");
+}
+
+function goFree() {
+  if (freeRunning) return;
+  if (song) {
+    cancelAnimationFrame(raf);
+    setDrone(false);
+    song = null;
+    paused = false;
+  }
+  $("screen-results").classList.add("hidden");
+  startFree();
+}
+
+async function askMicAgain() {
+  if (micOn) stopMic();
+  await startMic(true);
+  if (menuPage === "microphone") {
+    paintMicFacts();
+    paintMicTest();
+  }
+}
+
 function setMenuOpen(open) {
-  for (const id of ["menu", "menu-title", "menu-select", "menu-free"]) {
+  for (const id of ["menu", "menu-select", "menu-free"]) {
     $(id).setAttribute("aria-expanded", open ? "true" : "false");
   }
 }
 function openMenu() {
   const panel = $("menu-panel");
   if (panel.open) return;
+  showMenu("root");
   panel.showModal();
   setMenuOpen(true);
 }
@@ -1900,8 +2133,20 @@ const version = buildLabel();
 $("build-version").textContent = version === "?" ? "?" : `v${version}`;
 $("menu-panel").addEventListener("close", () => setMenuOpen(false));
 $("menu-close").addEventListener("click", closeMenu);
+$("menu-back").addEventListener("click", () => showMenu(menuParent[menuPage] || "root"));
+$("menu-body").addEventListener("click", (event) => {
+  const go = event.target.closest("[data-go]");
+  if (!go) return;
+  if (go.dataset.go === "songs") {
+    closeMenu();
+    goSongs();
+  } else if (go.dataset.go === "free") {
+    closeMenu();
+    goFree();
+  } else showMenu(go.dataset.go);
+});
+$("mic-ask").addEventListener("click", () => askMicAgain());
 $("menu").addEventListener("click", toggleMenu);
-$("menu-title").addEventListener("click", toggleMenu);
 $("menu-select").addEventListener("click", toggleMenu);
 $("menu-free").addEventListener("click", toggleMenu);
 $("begin").addEventListener("click", () => showScreen("screen-select"));

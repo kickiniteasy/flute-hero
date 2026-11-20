@@ -6,35 +6,39 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=28" />
+    <link rel="stylesheet" href="styles.css?v=36" />
   </head>
   <body>
-    <section id="screen-title" class="screen home">
-      <div class="title-copy">
-        <p class="eyebrow">A4 drone · 440 Hz</p>
-        <h1>Flute Hero</h1>
-        <p class="lede">
-          Six holes, covered from the mouth. The drone is the other barrel,
-          its own line: low A, with a fingering or without one. All the way
-          open is the high A, one octave up.
-        </p>
-        <button id="begin" class="solid begin" type="button">Begin</button>
-        <div class="title-tools">
-          <p class="key-legend">0 all open · 1 through 6 cover that many holes · space holds the drone</p>
-          <button id="menu-title" class="text-btn icon-btn menu-corner" type="button" aria-label="Menu" aria-expanded="false">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h16v1.8H4zM4 11.1h16v1.8H4zM4 15.2h16V17H4z"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
+    <section id="screen-title" class="screen title-screen">
+      <h1>Flute<span>Hero</span></h1>
       <div class="title-stage">
+        <div class="flute-aura" aria-hidden="true"></div>
+        <div class="swirl" aria-hidden="true">
+          <span class="orbit" style="--rx: 50%; --ry: 84%; --dur: 28s; --size: 40px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 62%; --ry: 72%; --dur: 28s; --delay: -14s; --size: 34px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 72%; --ry: 60%; --dur: 22s; --delay: -4s; --size: 34px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-2"></use></svg></span>
+          <span class="orbit" style="--rx: 42%; --ry: 68%; --dur: 22s; --delay: -15s; --size: 30px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-2"></use></svg></span>
+          <span class="orbit" style="--rx: 38%; --ry: 90%; --dur: 34s; --delay: -8s; --size: 38px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-4"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 68%; --ry: 80%; --dur: 34s; --delay: -25s; --size: 32px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-4"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 76%; --ry: 50%; --dur: 24s; --delay: -3s; --size: 30px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#star"></use></svg></span>
+          <span class="orbit" style="--rx: 54%; --ry: 56%; --dur: 24s; --delay: -15s; --size: 26px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#star"></use></svg></span>
+          <span class="orbit" style="--rx: 58%; --ry: 76%; --dur: 18s; --delay: -9s; --size: 28px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#sparkle"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 46%; --ry: 64%; --dur: 18s; --delay: -2s; --size: 24px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#sparkle"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 44%; --ry: 58%; --dur: 30s; --delay: -12s; --size: 32px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-3"></use></svg></span>
+          <span class="orbit" style="--rx: 70%; --ry: 70%; --dur: 30s; --delay: -27s; --size: 28px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#music-3"></use></svg></span>
+          <span class="orbit" style="--rx: 74%; --ry: 86%; --dur: 38s; --delay: -6s; --size: 34px"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#sparkles"></use></svg></span>
+          <span class="orbit reverse" style="--rx: 56%; --ry: 46%; --dur: 38s; --delay: -25s; --size: 26px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#sparkles"></use></svg></span>
+        </div>
         <div id="title-flute" class="flute-wrap">
-          <img src="assets/flute.png" alt="A4 drone flute" />
+          <img src="assets/flute.png" alt="" />
           <div class="glow"></div>
           <div class="holes"></div>
         </div>
       </div>
+      <button id="begin" class="solid begin" type="button">
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#music-4"></use></svg>
+        Start
+      </button>
     </section>
 
     <section id="screen-select" class="screen home hidden">
@@ -43,7 +47,7 @@
         <p class="eyebrow">Menu</p>
         <h2 class="menu-heading">Choose</h2>
         <button id="pick-free" class="song feature" type="button">
-          <b>Free Play</b>
+          <b><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#music-4"></use></svg>Free Play</b>
           <span>Microphone on. What you play leaves the flute and runs to the right.</span>
           <em>Open</em>
         </button>
@@ -214,28 +218,68 @@
 
     <dialog id="menu-panel" class="menu-modal" aria-labelledby="menu-heading">
       <header class="menu-bar">
-        <p id="menu-heading" class="eyebrow">Settings</p>
+        <button id="menu-back" class="text-btn hidden" type="button">Back</button>
+        <p id="menu-heading" class="eyebrow">Menu</p>
         <button id="menu-close" class="text-btn icon-btn" type="button" aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6.2 5 12 10.8 17.8 5 19 6.2 13.2 12 19 17.8 17.8 19 12 13.2 6.2 19 5 17.8 10.8 12 5 6.2z"></path>
           </svg>
         </button>
       </header>
-      <div class="menu-body">
-        <label class="menu-row">
-          <span class="menu-copy">
-            <b>Drone</b>
-            <small>Gold or rainbow on the drone line.</small>
-          </span>
-          <select id="drone-look">
-            <option value="gold">Gold</option>
-            <option value="rainbow">Rainbow</option>
-          </select>
-        </label>
+      <div id="menu-body" class="menu-body">
+        <div class="menu-page" data-menu="root">
+          <button class="menu-nav" type="button" data-go="songs">
+            <span class="menu-copy">
+              <b>Songs</b>
+              <small>The list of tunes.</small>
+            </span>
+          </button>
+          <button class="menu-nav" type="button" data-go="free">
+            <span class="menu-copy">
+              <b>Free Play</b>
+              <small>Notes leave the flute and run to the right.</small>
+            </span>
+          </button>
+          <button class="menu-nav sub" type="button" data-go="settings">
+            <span class="menu-copy">
+              <b>Settings</b>
+              <small>Drone and microphone.</small>
+            </span>
+          </button>
+        </div>
+        <div class="menu-page hidden" data-menu="settings">
+          <label class="menu-row">
+            <span class="menu-copy">
+              <b>Drone</b>
+              <small>Gold or rainbow on the drone line.</small>
+            </span>
+            <select id="drone-look">
+              <option value="gold">Gold</option>
+              <option value="rainbow">Rainbow</option>
+            </select>
+          </label>
+          <button class="menu-nav sub" type="button" data-go="microphone">
+            <span class="menu-copy">
+              <b>Microphone</b>
+              <small>Permission, this device, and a test.</small>
+            </span>
+          </button>
+        </div>
+        <div class="menu-page hidden" data-menu="microphone">
+          <dl id="mic-facts" class="mic-facts"></dl>
+          <p id="mic-fix" class="mic-fix"></p>
+          <button id="mic-ask" class="solid" type="button">Ask again</button>
+          <section class="mic-test" aria-label="Microphone test">
+            <p class="eyebrow">Test</p>
+            <p id="mic-test-state">Off</p>
+            <div class="mic-meter" aria-hidden="true"><b id="mic-meter-bar"></b></div>
+            <p id="mic-test-note">The microphone is off, so there is nothing to hear yet.</p>
+          </section>
+        </div>
       </div>
       <p id="build-version" class="menu-version"></p>
     </dialog>
 
-    <script src="game.js?v=39"></script>
+    <script src="game.js?v=42"></script>
   </body>
 </html>
