@@ -333,6 +333,7 @@ h1 {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
   height: 100vh;
   height: 100svh;
@@ -346,8 +347,8 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: var(--route-gap);
-  width: min(640px, 100%);
-  margin: 0;
+  width: max-content;
+  max-width: 100%;
 }
 .place {
   --ink: var(--gold);
@@ -356,7 +357,7 @@ h1 {
   z-index: 1;
   overflow: visible;
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 26px auto;
   column-gap: 18px;
   align-items: center;
   padding: 0;
@@ -1586,10 +1587,16 @@ h1 {
 #free-note.warn { color: var(--cream-dim); text-transform: none; letter-spacing: 0.02em; background: transparent; border-color: var(--line); }
 .text-btn:disabled,
 .panel-actions button:disabled { opacity: 0.4; cursor: default; }
-.tempo-tools { display: flex; align-items: center; gap: var(--gap); flex: 1; min-width: 0; width: 100%; }
-.bpm-box { display: flex; align-items: center; gap: var(--gap); flex: 1; min-width: 0; }
+.metro-card > .text-btn { align-self: stretch; }
+.metro-hint {
+  margin: -4px 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--cream-dim);
+}
+.bpm-box { display: flex; align-items: center; gap: var(--gap); flex: none; }
 .bpm-box .icon-btn { flex: none; width: var(--control); }
-.tempo-tools > .text-btn:not(.icon-btn) { flex: 1 1 auto; }
 .bpm-read { min-width: 52px; text-align: center; }
 .bpm-read b {
   display: block;

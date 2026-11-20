@@ -1933,8 +1933,8 @@ function metroClick(when, accent) {
   osc.connect(g);
   g.connect(master);
   const t = Math.max(when, audioCtx.currentTime);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime((accent ? 0.08 : 0.04) * level, t + 0.004);
+  const peak = (accent ? 0.48 : 0.32) * level;
+  g.gain.setValueAtTime(peak, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
   osc.start(t);
   osc.stop(t + 0.06);
@@ -2929,7 +2929,7 @@ function onTapTempo() {
 
 function openFreeSettings() {
   tapTimes = [];
-  $("free-tap-hint").textContent = "Beats per minute. Tap along to set it.";
+  $("free-tap-hint").textContent = "Tap along to set the tempo.";
   syncFreeSettings();
   paintTrackCard();
   const panel = $("free-settings");

@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=60" />
+    <link rel="stylesheet" href="styles.css?v=62" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -398,16 +398,40 @@
         </button>
       </header>
       <div class="menu-body">
-        <label class="menu-row">
+        <section class="track-card metro-card" aria-labelledby="metro-heading">
           <span class="menu-copy">
-            <b>Metronome volume</b>
-            <small>How loud the click is. The metronome button on the bar turns it on or off.</small>
+            <b id="metro-heading">Metronome</b>
+            <small>The click on the bar. How loud, how many beats, and how fast.</small>
           </span>
-          <span class="range-pair">
-            <input id="metro-volume" type="range" min="0" max="100" value="30" aria-label="Metronome volume" />
-            <b id="metro-volume-read">30</b>
-          </span>
-        </label>
+          <label class="track-field">
+            <span>Volume</span>
+            <span class="range-pair">
+              <input id="metro-volume" type="range" min="0" max="100" value="30" aria-label="Metronome volume" />
+              <b id="metro-volume-read">30</b>
+            </span>
+          </label>
+          <label class="track-field">
+            <span>Beats</span>
+            <select id="free-meter" aria-label="Beats in a bar">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+            </select>
+          </label>
+          <div class="track-field">
+            <span>Tempo</span>
+            <span class="bpm-box">
+              <button id="bpm-down" class="text-btn icon-btn" type="button" aria-label="Slower">−</button>
+              <div class="bpm-read"><b id="bpm-value">80</b><span>bpm</span></div>
+              <button id="bpm-up" class="text-btn icon-btn" type="button" aria-label="Faster">+</button>
+            </span>
+          </div>
+          <button id="free-tap" class="text-btn" type="button">Tap</button>
+          <p id="free-tap-hint" class="metro-hint">Tap along to set the tempo.</p>
+        </section>
         <div class="track-card">
           <span class="menu-copy">
             <b>Backing track</b>
@@ -438,37 +462,9 @@
             <button id="track-clear" class="text-btn" type="button" disabled>Clear</button>
           </div>
         </div>
-        <label class="menu-row">
-          <span class="menu-copy">
-            <b>Beats in a bar</b>
-            <small>The number on the left counts up to this, then starts over.</small>
-          </span>
-          <select id="free-meter" aria-label="Beats in a bar">
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4" selected>4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-          </select>
-        </label>
-        <div class="menu-row">
-          <span class="menu-copy">
-            <b>Tempo</b>
-            <small id="free-tap-hint">Beats per minute. Tap along to set it.</small>
-          </span>
-          <span class="tempo-tools">
-            <span class="bpm-box">
-              <button id="bpm-down" class="text-btn icon-btn" type="button" aria-label="Slower">−</button>
-              <div class="bpm-read"><b id="bpm-value">80</b><span>bpm</span></div>
-              <button id="bpm-up" class="text-btn icon-btn" type="button" aria-label="Faster">+</button>
-            </span>
-            <button id="free-tap" class="text-btn" type="button">Tap</button>
-          </span>
-        </div>
       </div>
     </dialog>
 
-    <script src="game.js?v=55"></script>
+    <script src="game.js?v=57"></script>
   </body>
 </html>
