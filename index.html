@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flute Hero</title>
+    <link rel="stylesheet" href="styles.css?v=20" />
+  </head>
+  <body>
+    <section id="screen-title" class="screen">
+      <div class="title-copy">
+        <p class="eyebrow">A4 drone · 440 Hz</p>
+        <h1>Flute Hero</h1>
+        <p class="lede">
+          Six holes, covered from the mouth. The drone is the other barrel,
+          its own line: low A, with a fingering or without one. All the way
+          open is the high A, one octave up.
+        </p>
+        <div id="song-list" class="song-list"></div>
+        <div class="title-tools">
+          <p class="key-legend">0 all open · 1 through 6 cover that many holes · space holds the drone</p>
+          <button id="menu-title" class="text-btn" type="button">Menu</button>
+        </div>
+      </div>
+      <div class="title-stage">
+        <div id="title-flute" class="flute-wrap">
+          <img src="assets/flute.png" alt="A4 drone flute" />
+          <div class="glow"></div>
+          <div class="holes"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-play" class="screen hidden">
+      <header class="hud">
+        <button id="back" class="text-btn" type="button">Songs</button>
+        <div class="hud-title">
+          <div id="song-name"></div>
+          <div id="song-blurb"></div>
+        </div>
+        <div class="hud-stats">
+          <div><b id="combo">0</b><span>combo</span></div>
+          <div><b id="score">0</b><span>score</span></div>
+        </div>
+      </header>
+      <div class="stage">
+        <canvas id="highway"></canvas>
+        <div id="play-flute" class="flute-wrap">
+          <div class="flute-body">
+            <img src="assets/flute.png" alt="" />
+            <div class="glow"></div>
+            <div class="open-mark"></div>
+            <div class="holes"></div>
+          </div>
+        </div>
+      </div>
+      <div class="play-bar">
+        <p id="count" class="count">1</p>
+        <div id="drone-pill" class="drone-pill">Drone · A4</div>
+        <div class="panel-actions">
+          <button id="pause" class="text-btn" type="button">Pause</button>
+          <button id="mic" class="text-btn" type="button">Use the flute</button>
+          <button id="guide" class="text-btn on" type="button">Guide on</button>
+          <button id="menu" class="text-btn" type="button">Menu</button>
+        </div>
+        <p id="heard"></p>
+      </div>
+    </section>
+
+    <section id="screen-results" class="overlay hidden">
+      <div class="results">
+        <p class="eyebrow">Clear</p>
+        <h2 id="result-title"></h2>
+        <p id="result-line"></p>
+        <div class="result-stats">
+          <div><b id="result-score">0</b><span>score</span></div>
+          <div><b id="result-acc">0%</b><span>on time</span></div>
+          <div><b id="result-combo">0</b><span>best combo</span></div>
+        </div>
+        <div class="result-actions">
+          <button id="again" class="solid" type="button">Play again</button>
+          <button id="results-songs" class="text-btn" type="button">Songs</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="menu-panel" class="menu-panel hidden">
+      <p class="eyebrow">Settings</p>
+      <label>
+        Drone
+        <select id="drone-look">
+          <option value="gold">Gold</option>
+          <option value="rainbow">Rainbow</option>
+        </select>
+      </label>
+    </div>
+
+    <script src="game.js?v=30"></script>
+  </body>
+</html>
