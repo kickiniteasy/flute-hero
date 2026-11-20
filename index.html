@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=44" />
+    <link rel="stylesheet" href="styles.css?v=60" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -42,30 +42,39 @@
     </section>
 
     <section id="screen-map" class="screen world hidden">
-      <button id="map-back" class="bare" type="button">Title</button>
       <div class="world-route">
-        <button id="pick-songs" class="place" type="button">
+        <button id="pick-songs" class="place songs" type="button">
           <span class="place-mark" aria-hidden="true"></span>
-          <b>Songs</b>
-          <small>Five albums along the barrel.</small>
+          <span class="place-copy">
+            <svg class="place-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#music-4"></use></svg>
+            <b>Songs</b>
+          </span>
         </button>
-        <button id="pick-flutes" class="place" type="button">
+        <button id="pick-flutes" class="place place-flutes" type="button">
           <span class="place-mark" aria-hidden="true"></span>
-          <b>Flutes</b>
-          <small>The one in hand, and the ones still shut.</small>
+          <span class="place-copy">
+            <svg class="place-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#sparkles"></use></svg>
+            <b>Flutes</b>
+          </span>
         </button>
-        <button id="pick-free" class="place" type="button">
+        <button id="pick-free" class="place free" type="button">
           <span class="place-mark" aria-hidden="true"></span>
-          <b>Free Play</b>
-          <small>An open barrel. Notes run to the right.</small>
+          <span class="place-copy">
+            <svg class="place-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#star"></use></svg>
+            <b>Free Play</b>
+          </span>
         </button>
       </div>
     </section>
 
     <section id="screen-select" class="screen stories hidden">
       <div class="story-top">
-        <div id="story-bars" class="story-bars"></div>
-        <button id="select-back" class="bare" type="button">Map</button>
+        <div class="story-head">
+          <button id="select-back" class="text-btn icon-btn" type="button" aria-label="Back">
+            <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
+          </button>
+          <div id="story-bars" class="story-bars"></div>
+        </div>
       </div>
       <button id="story-prev" class="story-arrow prev" type="button" aria-label="Previous album">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
@@ -78,7 +87,9 @@
 
     <section id="screen-play" class="screen hidden">
       <header class="hud">
-        <button id="back" class="text-btn" type="button">Songs</button>
+        <button id="back" class="text-btn icon-btn" type="button" aria-label="Back to songs">
+          <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
+        </button>
         <div class="hud-title">
           <div id="song-name"></div>
           <div id="song-blurb"></div>
@@ -149,15 +160,12 @@
 
     <section id="screen-free" class="screen hidden">
       <header class="hud">
-        <button id="free-back" class="text-btn" type="button">Map</button>
+        <button id="free-back" class="text-btn icon-btn" type="button" aria-label="Back">
+          <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
+        </button>
         <div class="hud-title">
           <div id="free-title">Free Play</div>
-          <div id="free-blurb">Notes leave the flute and run to the right.</div>
-        </div>
-        <div class="bpm-box">
-          <button id="bpm-down" class="text-btn icon-btn" type="button" aria-label="Slower">−</button>
-          <div class="bpm-read"><b id="bpm-value">80</b><span>bpm</span></div>
-          <button id="bpm-up" class="text-btn icon-btn" type="button" aria-label="Faster">+</button>
+          <div id="free-blurb"></div>
         </div>
       </header>
       <div class="stage">
@@ -173,24 +181,46 @@
       </div>
       <div class="play-bar free-play-bar">
         <p id="free-count" class="count">1</p>
-        <div id="free-drone" class="drone-pill">Drone</div>
-        <div id="free-readout">
-          <p id="free-heard">Listening</p>
-          <p id="free-detail"></p>
-          <div id="free-meters" class="meters">
-            <div><span>Note</span><i><b id="meter-note"></b></i></div>
-            <div class="drone-meter"><span>Drone</span><i><b id="meter-drone"></b></i></div>
-          </div>
-        </div>
+        <p id="free-note" class="drone-pill free-note"></p>
         <div class="panel-actions">
-          <button id="free-metro" class="text-btn on" type="button" aria-pressed="true">Metro</button>
+          <button id="free-play" class="text-btn icon-btn hidden" type="button" aria-label="Play track">
+            <svg class="icon icon-line icon-track-play" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5.5v13l11-6.5z"></path>
+            </svg>
+            <svg class="icon icon-line icon-track-stop" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+            </svg>
+          </button>
+          <button id="free-reset" class="text-btn icon-btn" type="button" aria-label="Reset">
+            <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+              <path d="M3 3v5h5"></path>
+            </svg>
+          </button>
+          <button id="free-settings-open" class="text-btn icon-btn" type="button" aria-label="Free Play settings">
+            <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"></path>
+            </svg>
+          </button>
+          <button id="free-metro" class="text-btn icon-btn on" type="button" aria-label="Metronome on" aria-pressed="true">
+            <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 11.4V9.1"></path>
+              <path d="m12 17 6.59-6.59"></path>
+              <path d="m15.05 5.7-.218-.691a3 3 0 0 0-5.663 0L4.418 19.695A1 1 0 0 0 5.37 21h13.253a1 1 0 0 0 .951-1.31L18.45 16.2"></path>
+              <circle cx="20" cy="9" r="2"></circle>
+            </svg>
+          </button>
           <button id="free-mic" class="text-btn icon-btn" type="button" aria-label="Use the flute" aria-pressed="false">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 14.2a3.1 3.1 0 0 0 3.1-3.1V6.1a3.1 3.1 0 0 0-6.2 0v5a3.1 3.1 0 0 0 3.1 3.1z"></path>
               <path d="M7.2 11.2a.95.95 0 0 0-1.9.15 6.7 6.7 0 0 0 5.75 6.35V20H8.6a.95.95 0 0 0 0 1.9h6.8a.95.95 0 0 0 0-1.9h-2.45v-2.3A6.7 6.7 0 0 0 18.7 11.35a.95.95 0 0 0-1.9-.15 4.8 4.8 0 0 1-9.6 0z"></path>
             </svg>
           </button>
-          <button id="free-record" class="text-btn record-btn" type="button">Record</button>
+          <button id="free-record" class="text-btn icon-btn record-btn" type="button" aria-label="Record" data-state="record">
+            <svg class="icon icon-record" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5.5"></circle></svg>
+            <svg class="icon icon-line icon-cancel" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"></path></svg>
+            <svg class="icon icon-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.6"></rect></svg>
+          </button>
         </div>
       </div>
       <div id="save-bar" class="save-bar hidden">
@@ -208,7 +238,9 @@
     </section>
 
     <section id="screen-flutes" class="screen flutes hidden">
-      <button id="flutes-back" class="bare" type="button">Map</button>
+      <button id="flutes-back" class="text-btn icon-btn" type="button" aria-label="Back">
+        <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
+      </button>
       <div class="flute-open">
         <img src="assets/flute.png" alt="" />
         <div>
@@ -274,7 +306,8 @@
     <dialog id="menu-panel" class="menu-modal" aria-labelledby="menu-heading">
       <header class="menu-bar">
         <button id="menu-back" class="text-btn hidden" type="button">Back</button>
-        <p id="menu-heading" class="eyebrow">Menu</p>
+        <p id="menu-word" class="menu-word">Flute <span>Hero</span></p>
+        <p id="menu-heading" class="eyebrow hidden">Settings</p>
         <button id="menu-close" class="text-btn icon-btn" type="button" aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6.2 5 12 10.8 17.8 5 19 6.2 13.2 12 19 17.8 17.8 19 12 13.2 6.2 19 5 17.8 10.8 12 5 6.2z"></path>
@@ -304,15 +337,15 @@
           <button class="menu-nav sub" type="button" data-go="settings">
             <span class="menu-copy">
               <b>Settings</b>
-              <small>Drone and microphone.</small>
+              <small>Drone color, the microphone, and the title screen.</small>
             </span>
           </button>
         </div>
         <div class="menu-page hidden" data-menu="settings">
           <label class="menu-row">
             <span class="menu-copy">
-              <b>Drone</b>
-              <small>Gold or rainbow on the drone line.</small>
+              <b>Drone color</b>
+              <small>Gold or rainbow while the drone is held.</small>
             </span>
             <select id="drone-look">
               <option value="gold">Gold</option>
@@ -322,7 +355,21 @@
           <button class="menu-nav sub" type="button" data-go="microphone">
             <span class="menu-copy">
               <b>Microphone</b>
-              <small>Permission, this device, and a test.</small>
+              <small>Which device hears the flute, and a test.</small>
+            </span>
+          </button>
+          <button class="menu-nav sub" type="button" data-go="developer">
+            <span class="menu-copy">
+              <b>Developer</b>
+              <small>Open the title screen.</small>
+            </span>
+          </button>
+        </div>
+        <div class="menu-page hidden" data-menu="developer">
+          <button id="open-title" class="menu-nav" type="button">
+            <span class="menu-copy">
+              <b>Title screen</b>
+              <small>The Flute Hero screen, before the map.</small>
             </span>
           </button>
         </div>
@@ -341,6 +388,87 @@
       <p id="build-version" class="menu-version"></p>
     </dialog>
 
-    <script src="game.js?v=47"></script>
+    <dialog id="free-settings" class="menu-modal" aria-labelledby="free-settings-heading">
+      <header class="menu-bar">
+        <p id="free-settings-heading" class="eyebrow">Settings</p>
+        <button id="free-settings-close" class="text-btn icon-btn" type="button" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.2 5 12 10.8 17.8 5 19 6.2 13.2 12 19 17.8 17.8 19 12 13.2 6.2 19 5 17.8 10.8 12 5 6.2z"></path>
+          </svg>
+        </button>
+      </header>
+      <div class="menu-body">
+        <label class="menu-row">
+          <span class="menu-copy">
+            <b>Metronome volume</b>
+            <small>How loud the click is. The metronome button on the bar turns it on or off.</small>
+          </span>
+          <span class="range-pair">
+            <input id="metro-volume" type="range" min="0" max="100" value="30" aria-label="Metronome volume" />
+            <b id="metro-volume-read">30</b>
+          </span>
+        </label>
+        <div class="track-card">
+          <span class="menu-copy">
+            <b>Backing track</b>
+            <small id="track-status">Music under the flute. None selected.</small>
+          </span>
+          <label class="track-field">
+            <span>Track</span>
+            <select id="track-pick" aria-label="Backing track">
+              <option value="">None</option>
+              <option value="earth">Rhythm of the Earth</option>
+              <option value="forest">Rhythm of the Forest</option>
+              <option value="file" hidden>Your file</option>
+            </select>
+          </label>
+          <label class="track-field">
+            <span>Volume</span>
+            <span class="range-pair">
+              <input id="track-volume" type="range" min="0" max="100" value="80" aria-label="Backing track volume" />
+              <b id="track-volume-read">80</b>
+            </span>
+          </label>
+          <canvas id="track-wave" class="track-wave hidden" width="320" height="48"></canvas>
+          <div class="track-actions">
+            <button id="track-preview" class="text-btn" type="button" disabled>Play</button>
+            <label class="text-btn file-btn">Your file
+              <input id="track-file" type="file" accept="audio/*" hidden />
+            </label>
+            <button id="track-clear" class="text-btn" type="button" disabled>Clear</button>
+          </div>
+        </div>
+        <label class="menu-row">
+          <span class="menu-copy">
+            <b>Beats in a bar</b>
+            <small>The number on the left counts up to this, then starts over.</small>
+          </span>
+          <select id="free-meter" aria-label="Beats in a bar">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4" selected>4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+          </select>
+        </label>
+        <div class="menu-row">
+          <span class="menu-copy">
+            <b>Tempo</b>
+            <small id="free-tap-hint">Beats per minute. Tap along to set it.</small>
+          </span>
+          <span class="tempo-tools">
+            <span class="bpm-box">
+              <button id="bpm-down" class="text-btn icon-btn" type="button" aria-label="Slower">−</button>
+              <div class="bpm-read"><b id="bpm-value">80</b><span>bpm</span></div>
+              <button id="bpm-up" class="text-btn icon-btn" type="button" aria-label="Faster">+</button>
+            </span>
+            <button id="free-tap" class="text-btn" type="button">Tap</button>
+          </span>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="game.js?v=55"></script>
   </body>
 </html>

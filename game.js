@@ -362,6 +362,18 @@ function ensureAudio() {
   overGain.connect(droneGain);
   droneOsc.start();
   over.start();
+  ensureTrackBus();
+}
+
+function ensureTrackBus() {
+  if (!audioCtx || trackGain) return;
+  trackGain = audioCtx.createGain();
+  trackGain.gain.value = trackLevel / 100;
+  trackGain.connect(master);
+}
+
+function applyTrackVolume() {
+  if (trackGain) trackGain.gain.value = trackLevel / 100;
 }
 
 function blip(freq, when, gain, dur, bus) {
@@ -1138,8 +1150,6 @@ let micGeneration = 0;
 function sayMic(text) {
   micError = text;
   if (!$("screen-play").classList.contains("hidden")) $("heard").textContent = text;
-  const detail = $("free-detail");
-  if (detail && !$("screen-free").classList.contains("hidden")) detail.textContent = text;
 }
 
 function stopMic() {
@@ -1310,6 +1320,36 @@ if (!(freeBpm >= 40 && freeBpm <= 208)) freeBpm = 80;
 freeBpm = Math.round(freeBpm);
 let preferredBpm = freeBpm;
 let metroOn = localStorage.getItem("flute-hero-metro") !== "off";
+function storedLevel(key, fallback) {
+  const raw = localStorage.getItem(key);
+  const n = Number(raw);
+  if (raw == null || raw === "" || !(n >= 0 && n <= 100)) return fallback;
+  return Math.round(n);
+}
+let metroLevel = storedLevel("flute-hero-metro-vol", 30);
+let trackLevel = storedLevel("flute-hero-track-vol", 80);
+let freeBeats = Number(localStorage.getItem("flute-hero-meter"));
+if (![2, 3, 4, 5, 6, 7].includes(freeBeats)) freeBeats = 4;
+let trackGain = null;
+let trackBuffer = null;
+let trackName = "";
+let trackId = "";
+let trackPeaks = [];
+let trackSource = null;
+let trackPlaying = false;
+let trackStartBeat = null;
+let trackPreview = null;
+let trackLoading = false;
+let trackLoadToken = 0;
+const BACKING_TRACKS = [
+  { id: "earth", name: "Rhythm of the Earth", url: "assets/tracks/rhythm-of-the-earth.mp3" },
+  { id: "forest", name: "Rhythm of the Forest", url: "assets/tracks/rhythm-of-the-forest.mp3" },
+];
+let countInMode = "";
+let countInRebased = false;
+let recordTrackAt = null;
+let replayTrackOffset = null;
+let tapTimes = [];
 let freeRunning = false;
 let freeRaf = 0;
 let freeOrigin = 0;
@@ -1360,8 +1400,12 @@ function setFreeBpm(n, reset) {
   }
 }
 
+function tempoLocked() {
+  return freeState === "recording" || freeState === "countin" || trackPlaying;
+}
+
 function nudgeBpm(delta) {
-  if (freeState === "recording" || freeState === "countin") return;
+  if (tempoLocked()) return;
   setFreeBpm(freeBpm + delta, false);
 }
 
@@ -1406,6 +1450,21 @@ function hideSave() {
   $("save-bar").classList.add("hidden");
 }
 
+function glyphButton(label, markup, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "text-btn icon-btn tiny";
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = markup;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+const ICON_PLAY = `<svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg>`;
+const ICON_STOP = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.6"></rect></svg>`;
+const ICON_FILE = `<svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"></path><path d="m7.5 11.5 4.5 4.5 4.5-4.5"></path><path d="M5 20h14"></path></svg>`;
+const ICON_X = `<svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"></path></svg>`;
+
 function renderTakes() {
   const takes = loadTakes();
   $("takes").classList.toggle("hidden", takes.length === 0);
@@ -1419,22 +1478,9 @@ function renderTakes() {
     name.textContent = take.name || "Take";
     const meta = document.createElement("span");
     meta.textContent = `${take.bpm} bpm · ${formatTake(take)}`;
-    const play = document.createElement("button");
-    play.type = "button";
-    play.className = "text-btn tiny";
-    play.textContent = playing ? "Stop" : "Play";
-    play.addEventListener("click", () => playSaved(take.id));
-    const file = document.createElement("button");
-    file.type = "button";
-    file.className = "text-btn tiny";
-    file.textContent = "File";
-    file.addEventListener("click", () => downloadTake(take));
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "text-btn tiny";
-    del.setAttribute("aria-label", `Delete ${take.name || "take"}`);
-    del.textContent = "×";
-    del.addEventListener("click", () => deleteTake(take.id));
+    const play = glyphButton(playing ? "Stop" : "Play", playing ? ICON_STOP : ICON_PLAY, () => playSaved(take.id));
+    const file = glyphButton("Download", ICON_FILE, () => downloadTake(take));
+    const del = glyphButton(`Delete ${take.name || "take"}`, ICON_X, () => deleteTake(take.id));
     row.append(name, meta, play, file, del);
     list.append(row);
   }
@@ -1546,24 +1592,103 @@ function followFlute(beat) {
   if (freeNotes.length > 80) freeNotes = freeNotes.filter((n) => n.t + n.d >= keep);
 }
 
-function beginReplay(notes, bpm, id, name) {
+function stopPreview() {
+  const src = trackPreview;
+  trackPreview = null;
+  if (!src) return;
+  try { src.onended = null; } catch { /* already gone */ }
+  try { src.stop(); } catch { /* already stopped */ }
+  try { src.disconnect(); } catch { /* already gone */ }
+}
+
+function stopTrack() {
+  stopPreview();
+  const src = trackSource;
+  trackSource = null;
+  trackPlaying = false;
+  if (!src) return;
+  try { src.onended = null; } catch { /* already gone */ }
+  try { src.stop(); } catch { /* already stopped */ }
+  try { src.disconnect(); } catch { /* already gone */ }
+}
+
+function startTrackAt(when, offsetSec = 0) {
+  if (!trackBuffer || !audioCtx) return;
+  ensureTrackBus();
+  stopTrack();
+  const offset = Math.max(0, offsetSec);
+  if (offset >= trackBuffer.duration - 0.02) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = trackBuffer;
+  src.connect(trackGain);
+  src.onended = () => {
+    if (trackSource !== src) return;
+    trackSource = null;
+    trackPlaying = false;
+  };
+  const t = Math.max(when, audioCtx.currentTime);
+  src.start(t, offset);
+  trackSource = src;
+  trackPlaying = true;
+  const beatAt = ((t - freeOrigin) * freeBpm) / 60;
+  trackStartBeat = beatAt - (offset * freeBpm) / 60;
+}
+
+function cueReplayTrack() {
+  if (!audioCtx || replayTrackOffset == null || !trackBuffer) {
+    stopTrack();
+    return;
+  }
+  startTrackAt(freeOrigin, replayTrackOffset);
+}
+
+function takeTrackOffset() {
+  if (!trackBuffer || trackStartBeat == null) return null;
+  const offset = ((recordOriginBeat - trackStartBeat) * 60) / (recordBpm || freeBpm);
+  if (!(offset >= -0.05 && offset < trackBuffer.duration - 0.05)) return null;
+  return Math.round(Math.max(0, offset) * 1000) / 1000;
+}
+
+function recordedTake(name) {
+  const take = {
+    id: uid(),
+    name: name || nextTakeName(),
+    bpm: recordBpm,
+    created: Date.now(),
+    notes: recordNotes.map((n) => ({ ...n })),
+  };
+  if (recordTrackAt != null && trackName) {
+    take.track = trackName;
+    take.trackAt = recordTrackAt;
+  }
+  return take;
+}
+
+function beginReplay(notes, bpm, id, name, trackOffset) {
   replayNotes = notes || [];
   replayId = id || "";
   replayName = name || "";
+  replayTrackOffset = Number.isFinite(trackOffset) ? trackOffset : null;
   freeNotes = [];
   freeLive = null;
   freeHold = null;
   freeBpm = bpm || preferredBpm;
   $("bpm-value").textContent = String(freeBpm);
-  if (audioCtx) freeOrigin = audioCtx.currentTime;
-  nextClickBeat = 0;
+  if (audioCtx) {
+    freeOrigin = audioCtx.currentTime;
+    nextClickBeat = 0;
+    cueReplayTrack();
+  }
   renderTakes();
 }
 
 function endReplay() {
+  stopTrack();
+  trackStartBeat = null;
   replayNotes = null;
   replayId = "";
   replayName = "";
+  replayTrackOffset = null;
   pendingTake = null;
   freeNotes = [];
   freeLive = null;
@@ -1588,7 +1713,8 @@ function playSaved(id) {
   const take = loadTakes().find((item) => item.id === id);
   if (!take) return;
   freeState = "replay";
-  beginReplay(take.notes, take.bpm || preferredBpm, take.id, take.name);
+  const sameTrack = take.track && take.track === trackName && Number.isFinite(take.trackAt);
+  beginReplay(take.notes, take.bpm || preferredBpm, take.id, take.name, sameTrack ? take.trackAt : null);
 }
 
 function deleteTake(id) {
@@ -1612,28 +1738,104 @@ function stopRecording() {
   closeFreeLive(freeBeat());
   if (!recordNotes.length) {
     freeState = "live";
-    freeNotice = "Nothing landed on the chart.";
+    freeNotice = "Nothing landed.";
     freeNoticeUntil = performance.now() + 2600;
     return;
   }
-  pendingTake = {
-    id: uid(),
-    name: nextTakeName(),
-    bpm: recordBpm,
-    created: Date.now(),
-    notes: recordNotes.map((n) => ({ ...n })),
-  };
+  pendingTake = recordedTake(nextTakeName());
   $("take-name").value = pendingTake.name;
   $("save-bar").classList.remove("hidden");
   freeState = "review";
-  beginReplay(pendingTake.notes, pendingTake.bpm, "", pendingTake.name);
+  beginReplay(pendingTake.notes, pendingTake.bpm, "", pendingTake.name, pendingTake.trackAt);
   $("take-name").focus();
+}
+
+function cancelCountIn() {
+  const rebased = countInRebased;
+  countInRebased = false;
+  countInMode = "";
+  if (rebased) {
+    stopTrack();
+    trackStartBeat = null;
+  }
+  freeState = "live";
+  if (rebased && audioCtx) {
+    freeOrigin = audioCtx.currentTime;
+    nextClickBeat = 0;
+  }
+}
+
+function beginAlignedStart(mode) {
+  ensureAudio();
+  audioCtx.resume();
+  const beats = freeBeats;
+  const startWhen = audioCtx.currentTime + (beats * 60) / freeBpm;
+  freeOrigin = startWhen;
+  nextClickBeat = -beats;
+  freeNotes = [];
+  freeLive = null;
+  freeHold = null;
+  countInEnd = 0;
+  countInRebased = true;
+  countInMode = mode === "record" ? "record" : "play";
+  recordTrackAt = null;
+  freeState = "countin";
+  if (trackBuffer) startTrackAt(startWhen, 0);
+}
+
+function enterRecording(originBeat) {
+  recordOriginBeat = originBeat;
+  recordBpm = freeBpm;
+  recordNotes = [];
+  recordTrackAt = takeTrackOffset();
+  freeState = "recording";
+}
+
+function onTrackPlay() {
+  if (!trackBuffer) return;
+  if (freeState === "recording" || freeState === "countin" || freeState === "review") return;
+  if (trackPlaying) {
+    stopTrack();
+    return;
+  }
+  if (freeState === "replay") {
+    if (audioCtx) {
+      freeOrigin = audioCtx.currentTime;
+      nextClickBeat = 0;
+      cueReplayTrack();
+    }
+    return;
+  }
+  beginAlignedStart("play");
+}
+
+function resetFree() {
+  if (freeState === "recording" || freeState === "review") return;
+  if (freeState === "replay") {
+    if (!audioCtx) return;
+    freeOrigin = audioCtx.currentTime;
+    nextClickBeat = 0;
+    cueReplayTrack();
+    return;
+  }
+  stopTrack();
+  trackStartBeat = null;
+  freeNotes = [];
+  freeLive = null;
+  freeHold = null;
+  countInMode = "";
+  countInRebased = false;
+  freeState = "live";
+  if (audioCtx) {
+    freeOrigin = audioCtx.currentTime;
+    nextClickBeat = 0;
+  }
 }
 
 function onRecord() {
   if (freeState === "review") return;
   if (freeState === "countin") {
-    freeState = "live";
+    cancelCountIn();
     return;
   }
   if (freeState === "recording") {
@@ -1644,26 +1846,26 @@ function onRecord() {
     endReplay();
     return;
   }
+  if (trackBuffer && !trackPlaying) {
+    beginAlignedStart("record");
+    return;
+  }
   const beat = freeBeat();
-  let bar = Math.ceil(beat / 4) * 4;
-  if (bar - beat < 0.05) bar += 4;
-  if (bar - beat < 3.5) bar += 4;
+  const m = freeBeats;
+  let bar = Math.ceil(beat / m) * m;
+  if (bar - beat < 0.05) bar += m;
+  if (bar - beat < m - 0.5) bar += m;
   countInEnd = bar;
+  countInMode = "record";
+  countInRebased = false;
+  recordTrackAt = null;
   freeState = "countin";
 }
 
 function leaveFree(screen = "screen-map") {
   if (freeState === "recording") {
     closeFreeLive(freeBeat());
-    if (recordNotes.length) {
-      persistTake({
-        id: uid(),
-        name: nextTakeName(),
-        bpm: recordBpm,
-        created: Date.now(),
-        notes: recordNotes.map((n) => ({ ...n })),
-      });
-    }
+    if (recordNotes.length) persistTake(recordedTake(nextTakeName()));
   } else if (pendingTake) {
     const take = pendingFromInput();
     if (take) persistTake(take);
@@ -1677,6 +1879,10 @@ function leaveFree(screen = "screen-map") {
   freeState = "live";
   freeBpm = preferredBpm;
   hideSave();
+  stopTrack();
+  trackStartBeat = null;
+  replayTrackOffset = null;
+  closeFreeSettings();
   showScreen(screen);
 }
 
@@ -1702,6 +1908,7 @@ async function startFree() {
   setMetroButton();
   $("bpm-value").textContent = String(freeBpm);
   renderTakes();
+  if (!trackBuffer && !trackLoading) restoreBacking();
   cancelAnimationFrame(freeRaf);
   freeRaf = requestAnimationFrame(freeFrame);
   audioCtx.resume();
@@ -1717,7 +1924,8 @@ function setMetroButton() {
 }
 
 function metroClick(when, accent) {
-  if (!audioCtx || !master) return;
+  if (!audioCtx || !master || metroLevel <= 0) return;
+  const level = metroLevel / 100;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   osc.type = "sine";
@@ -1726,7 +1934,7 @@ function metroClick(when, accent) {
   g.connect(master);
   const t = Math.max(when, audioCtx.currentTime);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(accent ? 0.08 : 0.04, t + 0.004);
+  g.gain.exponentialRampToValueAtTime((accent ? 0.08 : 0.04) * level, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
   osc.start(t);
   osc.stop(t + 0.06);
@@ -1740,66 +1948,58 @@ function serviceMetro() {
   let guard = 0;
   while (nextClickBeat <= horizon && guard < 8) {
     const when = freeOrigin + (nextClickBeat * 60) / freeBpm;
-    if (when >= audioCtx.currentTime - 0.01) metroClick(when, nextClickBeat % 4 === 0);
+    if (when >= audioCtx.currentTime - 0.01) metroClick(when, nextClickBeat % freeBeats === 0);
     nextClickBeat += 1;
     guard += 1;
   }
 }
 
-function meterPct(db) {
-  return Math.max(0, Math.min(100, ((db + 80) / 50) * 100));
+function barBeat(beat) {
+  const m = freeBeats;
+  const n = Math.floor(Number.isFinite(beat) ? beat : 0);
+  return ((n % m) + m) % m + 1;
 }
 
-function freeHeardLine() {
-  const line = youLine();
-  if (!micOn) return line || "Ready";
-  if (!line || line === "Listening") return "Listening";
-  return `Hearing ${line}`;
-}
-
-function freeDetailLine() {
-  if (freeNotice && performance.now() < freeNoticeUntil && freeState === "live") return freeNotice;
-  if (!micOn) {
-    const det = detectedEvent();
-    if (det) {
-      const hint = det.pitch && PITCHES[det.pitch] ? PITCHES[det.pitch].hint : "";
-      if (det.drone && hint) return `${hint} · drone held`;
-      if (det.drone) return "Drone held";
-      return hint;
-    }
-    if (micError) return micError;
-    return "Keys 0–6, space holds the drone.";
-  }
-  return micDetail || "Listening";
+function freeNoteLine() {
+  const names = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
+  const covers = playerCovers();
+  const pitch = micOn && micLabel ? micLabel : covers == null ? "" : names[covers] || "";
+  if (pitch) return { text: pitch, hot: true };
+  if (freeNotice && performance.now() < freeNoticeUntil && freeState === "live") return { text: freeNotice, warn: true };
+  return { text: "" };
 }
 
 function paintFreeChrome(beat) {
   const title = $("free-title");
   const blurb = $("free-blurb");
-  const shown = Math.floor(Number.isFinite(beat) ? beat : 0);
-  const n = ((shown % 4) + 4) % 4 + 1;
+  const n = barBeat(beat);
   const count = $("free-count");
   if (count.textContent !== String(n)) count.textContent = String(n);
   count.classList.toggle("down", n === 1);
   const drone = playerDrone();
-  const pill = $("free-drone");
-  pill.classList.toggle("on", drone);
-  pill.textContent = drone ? "Drone on" : "Drone";
-  const heard = $("free-heard");
-  heard.textContent = freeHeardLine();
-  heard.classList.toggle("hot", drone);
-  $("free-detail").textContent = freeDetailLine();
-  $("free-meters").classList.toggle("hidden", !micOn);
-  $("meter-note").style.width = `${meterPct(micMelodyDb)}%`;
-  $("meter-drone").style.width = `${meterPct(micDroneDb)}%`;
-  const locked = freeState === "recording" || freeState === "countin";
+  const note = freeNoteLine();
+  const chip = $("free-note");
+  chip.textContent = note.text;
+  chip.classList.toggle("on", Boolean(note.hot));
+  chip.classList.toggle("warn", Boolean(note.warn));
+  chip.classList.toggle("drone", Boolean(note.hot && drone));
+  chip.classList.toggle("rainbow", droneLook === "rainbow");
+  const locked = tempoLocked();
   $("bpm-down").disabled = locked;
   $("bpm-up").disabled = locked;
+  const play = $("free-play");
+  play.classList.toggle("hidden", !trackBuffer);
+  play.classList.toggle("is-on", trackPlaying);
+  play.disabled = freeState === "recording" || freeState === "countin" || freeState === "review" || (freeState === "replay" && replayTrackOffset == null);
+  play.setAttribute("aria-label", trackPlaying ? "Stop track" : trackName ? `Play ${trackName}` : "Play track");
+  $("free-reset").disabled = freeState === "recording" || freeState === "review";
   const rec = $("free-record");
   rec.classList.toggle("hidden", freeState === "review");
   rec.classList.toggle("on", freeState === "countin");
   rec.classList.toggle("hot", freeState === "recording");
-  rec.textContent = freeState === "recording" || freeState === "replay" ? "Stop" : freeState === "countin" ? "Cancel" : "Record";
+  const stopping = freeState === "recording" || freeState === "replay";
+  rec.dataset.state = stopping ? "stop" : freeState === "countin" ? "cancel" : "record";
+  rec.setAttribute("aria-label", stopping ? "Stop" : freeState === "countin" ? "Cancel" : "Record");
   title.classList.toggle("rec", freeState === "recording");
   if (freeState === "countin") {
     title.textContent = "Free Play";
@@ -1807,16 +2007,29 @@ function paintFreeChrome(beat) {
   } else if (freeState === "recording") {
     const recBeat = Math.max(0, beat - recordOriginBeat);
     title.textContent = "Recording";
-    blurb.textContent = `Bar ${Math.floor(recBeat / 4) + 1}`;
+    blurb.textContent = `Bar ${Math.floor(recBeat / freeBeats) + 1}`;
   } else if (freeState === "review") {
     title.textContent = "Keep this take?";
-    blurb.textContent = "It plays back from the flute while you name it.";
+    blurb.textContent = "";
   } else if (freeState === "replay") {
     title.textContent = replayName || "Free Play";
-    blurb.textContent = "Saved take, running off the flute.";
+    blurb.textContent = "";
   } else {
     title.textContent = "Free Play";
-    blurb.textContent = "Notes leave the flute and run to the right.";
+    blurb.textContent = "";
+  }
+  blurb.classList.toggle("hidden", !blurb.textContent);
+  if ($("free-settings").open) {
+    const busy = freeState === "recording" || freeState === "countin";
+    $("free-meter").disabled = locked;
+    $("free-tap").disabled = locked;
+    $("track-pick").disabled = busy || trackLoading;
+    $("track-file").disabled = busy || trackLoading;
+    $("track-file").closest("label").classList.toggle("is-off", busy || trackLoading);
+    $("track-clear").disabled = !trackBuffer || busy || trackLoading;
+    const preview = $("track-preview");
+    preview.disabled = !trackBuffer || busy || trackLoading;
+    preview.textContent = trackPreview || trackPlaying ? "Stop" : "Play";
   }
 }
 
@@ -1865,15 +2078,15 @@ function drawFree(beat) {
     const x = xPast(b, beat, column.hitX, w);
     if (x < column.hitX || x > endX) continue;
     for (const t of tracks) {
-      freeCtx.strokeStyle = b % 4 === 0 ? "rgba(255,246,228,0.2)" : "rgba(255,246,228,0.07)";
+      freeCtx.strokeStyle = b % freeBeats === 0 ? "rgba(255,246,228,0.2)" : "rgba(255,246,228,0.07)";
       freeCtx.beginPath();
       freeCtx.moveTo(x, t.y - t.r * 0.35);
       freeCtx.lineTo(x, t.y + t.r * 0.35);
       freeCtx.stroke();
     }
-    if (b >= 0 && b % 4 === 0) {
+    if (b >= 0 && b % freeBeats === 0) {
       freeCtx.fillStyle = "rgba(246,234,212,0.45)";
-      freeCtx.fillText(String(b / 4 + 1), x, Math.max(16, tracks[0].y - tracks[0].r - 6));
+      freeCtx.fillText(String(b / freeBeats + 1), x, Math.max(16, tracks[0].y - tracks[0].r - 6));
     }
   }
   const idle = { melody: null, drone: false, active: false };
@@ -1951,10 +2164,11 @@ function freeFrame() {
   if (freeCanvas.width < 10) resize();
   const beat = freeBeat();
   if (freeState === "countin" && beat >= countInEnd) {
-    recordOriginBeat = countInEnd;
-    recordBpm = freeBpm;
-    recordNotes = [];
-    freeState = "recording";
+    const mode = countInMode;
+    countInMode = "";
+    countInRebased = false;
+    if (mode === "play") freeState = "live";
+    else enterRecording(countInEnd);
   }
   followFlute(beat);
   serviceMetro();
@@ -1968,6 +2182,7 @@ function freeFrame() {
       if (freeState === "review") {
         freeOrigin = audioCtx.currentTime;
         nextClickBeat = 0;
+        cueReplayTrack();
       } else endReplay();
     }
   }
@@ -2042,6 +2257,13 @@ function tickTitle() {
 
 window.addEventListener("keydown", (e) => {
   if (e.target?.closest?.("input, textarea")) return;
+  if ($("free-settings").open) {
+    if (e.code === "Escape") {
+      e.preventDefault();
+      closeFreeSettings();
+    }
+    return;
+  }
   if ($("menu-panel").open) {
     if (e.code === "Escape") {
       e.preventDefault();
@@ -2069,7 +2291,6 @@ window.addEventListener("keydown", (e) => {
       else if (song) stopSong();
       else if (!$("screen-flutes").classList.contains("hidden")) showScreen("screen-map");
       else if (!$("screen-select").classList.contains("hidden")) showScreen("screen-map");
-      else if (!$("screen-map").classList.contains("hidden")) showScreen("screen-title");
     }
     return;
   }
@@ -2163,8 +2384,8 @@ function buildLabel() {
 }
 
 const PAGES_URL = "https://kickiniteasy.github.io/flute-hero/";
-const menuParent = { settings: "root", microphone: "settings" };
-const menuTitle = { root: "Menu", settings: "Settings", microphone: "Microphone" };
+const menuParent = { settings: "root", microphone: "settings", developer: "settings" };
+const menuTitle = { root: "Flute Hero", settings: "Settings", microphone: "Microphone", developer: "Developer" };
 let menuPage = "root";
 let micWatch = 0;
 
@@ -2341,8 +2562,12 @@ function showMenu(page) {
   for (const el of document.querySelectorAll("[data-menu]")) {
     el.classList.toggle("hidden", el.dataset.menu !== page);
   }
-  $("menu-heading").textContent = menuTitle[page] || "Menu";
-  $("menu-back").classList.toggle("hidden", page === "root");
+  const root = page === "root";
+  $("menu-word").classList.toggle("hidden", !root);
+  $("menu-heading").classList.toggle("hidden", root);
+  $("menu-heading").textContent = menuTitle[page] || "Flute Hero";
+  $("menu-panel").setAttribute("aria-labelledby", root ? "menu-word" : "menu-heading");
+  $("menu-back").classList.toggle("hidden", root);
   if (page === "microphone") {
     paintMicFacts();
     paintMicTest();
@@ -2427,12 +2652,15 @@ $("menu-body").addEventListener("click", (event) => {
 $("mic-ask").addEventListener("click", () => askMicAgain());
 $("app-menu").addEventListener("click", toggleMenu);
 $("begin").addEventListener("click", () => showScreen("screen-map"));
-$("map-back").addEventListener("click", () => showScreen("screen-title"));
 $("pick-songs").addEventListener("click", () => showScreen("screen-select"));
 $("pick-flutes").addEventListener("click", () => showScreen("screen-flutes"));
 $("pick-free").addEventListener("click", () => startFree());
 $("select-back").addEventListener("click", () => showScreen("screen-map"));
 $("flutes-back").addEventListener("click", () => showScreen("screen-map"));
+$("open-title").addEventListener("click", () => {
+  closeMenu();
+  showScreen("screen-title");
+});
 $("story-prev").addEventListener("click", () => turnAlbum(-1));
 $("story-next").addEventListener("click", () => turnAlbum(1));
 let swipeX = null;
@@ -2450,7 +2678,310 @@ $("story-frame").addEventListener("pointerup", (event) => {
   if (Math.abs(dx) < 48) return;
   turnAlbum(dx < 0 ? 1 : -1);
 });
+function syncFreeSettings() {
+  $("metro-volume").value = String(metroLevel);
+  $("metro-volume-read").textContent = String(metroLevel);
+  $("track-volume").value = String(trackLevel);
+  $("track-volume-read").textContent = String(trackLevel);
+  $("free-meter").value = String(freeBeats);
+}
+
+function trackStatus() {
+  if (trackLoading) return "Music under the flute. Loading…";
+  if (trackPreview) return "Music under the flute. Playing a test.";
+  if (trackPlaying) return "Music under the flute. Playing with the beat.";
+  if (trackBuffer) return "Music under the flute. Ready to play.";
+  return "Music under the flute. None selected.";
+}
+
+function paintTrackCard() {
+  const status = $("track-status");
+  const canvas = $("track-wave");
+  const pick = $("track-pick");
+  const busy = freeState === "recording" || freeState === "countin";
+  status.textContent = trackStatus();
+  pick.value = trackLoading ? trackPending : (trackId || "");
+  pick.disabled = busy || trackLoading;
+  $("track-file").disabled = busy || trackLoading;
+  $("track-file").closest("label").classList.toggle("is-off", busy || trackLoading);
+  $("track-clear").disabled = !trackBuffer || busy || trackLoading;
+  const preview = $("track-preview");
+  preview.disabled = !trackBuffer || busy || trackLoading;
+  preview.textContent = trackPreview || trackPlaying ? "Stop" : "Play";
+  preview.setAttribute("aria-label", trackPreview || trackPlaying ? "Stop the backing track" : "Play a test");
+  if (!trackBuffer) {
+    canvas.classList.add("hidden");
+    return;
+  }
+  canvas.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    if (!trackPeaks.length) return;
+    const w = Math.max(280, Math.floor(canvas.clientWidth || canvas.parentElement?.clientWidth || 280));
+    const h = 48;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, w, h);
+    const gap = 2;
+    const bw = Math.max(1, (w - gap * (trackPeaks.length - 1)) / trackPeaks.length);
+    ctx.fillStyle = "#f0c36a";
+    trackPeaks.forEach((p, i) => {
+      const bh = Math.max(2, p * (h - 6));
+      ctx.fillRect(i * (bw + gap), (h - bh) / 2, bw, bh);
+    });
+  });
+}
+
+function peaksFromBuffer(buffer) {
+  const buckets = 80;
+  const channels = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  const length = channels[0].length;
+  const size = Math.max(1, Math.floor(length / buckets));
+  const step = Math.max(1, Math.floor(size / 40));
+  const peaks = [];
+  for (let i = 0; i < buckets; i++) {
+    let peak = 0;
+    const start = i * size;
+    const end = Math.min(length, start + size);
+    for (let j = start; j < end; j += step) {
+      for (let c = 0; c < channels.length; c++) {
+        const v = Math.abs(channels[c][j]);
+        if (v > peak) peak = v;
+      }
+    }
+    peaks.push(peak);
+  }
+  return peaks;
+}
+
+function decodeFile(raw) {
+  const copy = raw.slice(0);
+  try {
+    const pending = audioCtx.decodeAudioData(copy);
+    if (pending && typeof pending.then === "function") return pending;
+  } catch {
+    /* older browsers want the callback form */
+  }
+  return new Promise((resolve, reject) => {
+    audioCtx.decodeAudioData(raw.slice(0), resolve, reject);
+  });
+}
+
+function rememberBacking(id) {
+  try {
+    if (id === "earth" || id === "forest") localStorage.setItem("flute-hero-backing", id);
+    else localStorage.removeItem("flute-hero-backing");
+  } catch {
+    /* the browser can refuse storage */
+  }
+}
+
+function showFileOption(name) {
+  const option = $("track-pick").querySelector('option[value="file"]');
+  option.hidden = false;
+  option.textContent = name || "Your file";
+}
+
+function hideFileOption() {
+  const option = $("track-pick").querySelector('option[value="file"]');
+  option.hidden = true;
+  option.textContent = "Your file";
+}
+
+function useTrack(audio, name, id) {
+  stopTrack();
+  trackStartBeat = null;
+  trackBuffer = audio;
+  trackName = name;
+  trackId = id;
+  trackPeaks = peaksFromBuffer(audio);
+  trackLoading = false;
+  trackPending = "";
+  if (id === "file") showFileOption(name);
+  else hideFileOption();
+  rememberBacking(id);
+  paintTrackCard();
+}
+
+let trackPending = "";
+
+async function loadBacking(item) {
+  if (!item || freeState === "recording" || freeState === "countin") return;
+  const token = ++trackLoadToken;
+  trackPending = item.id;
+  trackLoading = true;
+  paintTrackCard();
+  ensureAudio();
+  try { await audioCtx.resume(); } catch { /* the click already asked it to run */ }
+  try {
+    const response = await fetch(item.url);
+    if (!response.ok) throw new Error("missing");
+    const audio = await decodeFile(await response.arrayBuffer());
+    if (token !== trackLoadToken) return;
+    useTrack(audio, item.name, item.id);
+  } catch {
+    if (token !== trackLoadToken) return;
+    trackLoading = false;
+    trackPending = "";
+    paintTrackCard();
+    freeNotice = "That track would not play.";
+    freeNoticeUntil = performance.now() + 2800;
+  }
+}
+
+function restoreBacking() {
+  let id = "";
+  try { id = localStorage.getItem("flute-hero-backing") || ""; } catch { /* ignore */ }
+  const item = BACKING_TRACKS.find((track) => track.id === id);
+  if (item) loadBacking(item);
+}
+
+async function loadTrackFile(file) {
+  if (!file || freeState === "recording" || freeState === "countin") return;
+  const token = ++trackLoadToken;
+  trackPending = "file";
+  trackLoading = true;
+  paintTrackCard();
+  ensureAudio();
+  try { await audioCtx.resume(); } catch { /* the click already asked it to run */ }
+  try {
+    const audio = await decodeFile(await file.arrayBuffer());
+    if (token !== trackLoadToken) return;
+    useTrack(audio, file.name.replace(/\.[^.]+$/, "") || "Your file", "file");
+  } catch {
+    if (token !== trackLoadToken) return;
+    trackLoading = false;
+    trackPending = "";
+    paintTrackCard();
+    freeNotice = "That file would not play.";
+    freeNoticeUntil = performance.now() + 2800;
+  }
+}
+
+function clearTrack() {
+  if (freeState === "recording" || freeState === "countin") return;
+  trackLoadToken += 1;
+  trackLoading = false;
+  trackPending = "";
+  stopTrack();
+  trackBuffer = null;
+  trackName = "";
+  trackId = "";
+  trackPeaks = [];
+  trackStartBeat = null;
+  hideFileOption();
+  rememberBacking("");
+  paintTrackCard();
+}
+
+async function toggleTrackPreview() {
+  if (!trackBuffer || freeState === "recording" || freeState === "countin") return;
+  if (trackPreview || trackPlaying) {
+    stopTrack();
+    paintTrackCard();
+    return;
+  }
+  ensureAudio();
+  try { await audioCtx.resume(); } catch { /* the click already asked it to run */ }
+  ensureTrackBus();
+  const src = audioCtx.createBufferSource();
+  src.buffer = trackBuffer;
+  src.connect(trackGain);
+  src.onended = () => {
+    if (trackPreview !== src) return;
+    trackPreview = null;
+    paintTrackCard();
+  };
+  src.start();
+  trackPreview = src;
+  paintTrackCard();
+}
+
+function setFreeBeats(n) {
+  n = Number(n);
+  if (![2, 3, 4, 5, 6, 7].includes(n)) n = 4;
+  if (tempoLocked()) {
+    $("free-meter").value = String(freeBeats);
+    return;
+  }
+  freeBeats = n;
+  try { localStorage.setItem("flute-hero-meter", String(freeBeats)); } catch { /* ignore */ }
+}
+
+function onTapTempo() {
+  if (tempoLocked()) return;
+  const now = performance.now();
+  const last = tapTimes[tapTimes.length - 1];
+  if (last == null || now - last > 2000) tapTimes = [];
+  tapTimes.push(now);
+  if (tapTimes.length > 6) tapTimes.shift();
+  const hint = $("free-tap-hint");
+  if (tapTimes.length < 2) {
+    hint.textContent = "Tap the beat.";
+    return;
+  }
+  let sum = 0;
+  for (let i = 1; i < tapTimes.length; i++) sum += tapTimes[i] - tapTimes[i - 1];
+  setFreeBpm(Math.round(60000 / (sum / (tapTimes.length - 1))), false);
+  hint.textContent = `${freeBpm} bpm`;
+}
+
+function openFreeSettings() {
+  tapTimes = [];
+  $("free-tap-hint").textContent = "Beats per minute. Tap along to set it.";
+  syncFreeSettings();
+  paintTrackCard();
+  const panel = $("free-settings");
+  if (!panel.open) panel.showModal();
+}
+
+function closeFreeSettings() {
+  if (trackPreview) stopPreview();
+  const panel = $("free-settings");
+  if (panel.open) panel.close();
+}
+
 $("free-back").addEventListener("click", leaveFree);
+$("free-reset").addEventListener("click", resetFree);
+$("free-play").addEventListener("click", onTrackPlay);
+$("free-settings-open").addEventListener("click", openFreeSettings);
+$("free-settings-close").addEventListener("click", closeFreeSettings);
+$("metro-volume").addEventListener("input", (e) => {
+  metroLevel = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+  $("metro-volume-read").textContent = String(metroLevel);
+  try { localStorage.setItem("flute-hero-metro-vol", String(metroLevel)); } catch { /* ignore */ }
+});
+$("track-volume").addEventListener("input", (e) => {
+  trackLevel = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+  $("track-volume-read").textContent = String(trackLevel);
+  applyTrackVolume();
+  try { localStorage.setItem("flute-hero-track-vol", String(trackLevel)); } catch { /* ignore */ }
+});
+$("free-meter").addEventListener("change", (e) => setFreeBeats(e.target.value));
+$("free-tap").addEventListener("click", onTapTempo);
+$("track-pick").addEventListener("change", (e) => {
+  const id = e.target.value;
+  if (id === "file") {
+    e.target.value = trackId || "";
+    return;
+  }
+  if (!id) {
+    clearTrack();
+    return;
+  }
+  if (id === trackId && trackBuffer) return;
+  const item = BACKING_TRACKS.find((track) => track.id === id);
+  if (item) loadBacking(item);
+  else e.target.value = trackId || "";
+});
+$("track-preview").addEventListener("click", toggleTrackPreview);
+$("track-file").addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (file) loadTrackFile(file);
+});
+$("track-clear").addEventListener("click", clearTrack);
 $("bpm-down").addEventListener("click", () => nudgeBpm(-1));
 $("bpm-up").addEventListener("click", () => nudgeBpm(1));
 $("free-metro").addEventListener("click", () => {
@@ -2481,6 +3012,7 @@ $("take-name").addEventListener("keydown", (e) => {
   }
 });
 setMetroButton();
+syncFreeSettings();
 $("bpm-value").textContent = String(freeBpm);
 $("drone-look").value = droneLook;
 $("drone-look").addEventListener("change", (e) => {
