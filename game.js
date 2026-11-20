@@ -162,6 +162,81 @@ const SONGS = [
       ["A4", 22, 4],
     ],
   },
+  {
+    id: "ford",
+    title: "The Ford",
+    blurb: "Step across, then the drone holds the far bank.",
+    level: "Easy",
+    bpm: 72,
+    notes: [
+      ["E5", 4, 1],
+      ["D5", 5, 1],
+      ["C5", 6, 2],
+      ["A4", 8, 2],
+      ["drone", 10, 4],
+      ["C5", 10, 2],
+      ["E5", 12, 2],
+      ["A4", 14, 4],
+    ],
+  },
+  {
+    id: "ember",
+    title: "Ember",
+    blurb: "A small phrase that settles on the low A.",
+    level: "Easy",
+    bpm: 66,
+    notes: [
+      ["G5", 4, 2],
+      ["E5", 6, 1],
+      ["D5", 7, 1],
+      ["C5", 8, 2],
+      ["drone", 10, 2],
+      ["A4", 10, 4],
+    ],
+  },
+  {
+    id: "held",
+    title: "Held",
+    blurb: "The drone stays. The melody answers it.",
+    level: "Easy",
+    bpm: 60,
+    notes: [
+      ["drone", 4, 12],
+      ["A4", 4, 2],
+      ["C5", 6, 2],
+      ["D5", 8, 2],
+      ["C5", 10, 2],
+      ["A4", 12, 4],
+    ],
+  },
+  {
+    id: "under",
+    title: "Underneath",
+    blurb: "Short notes over a drone that does not let go.",
+    level: "Medium",
+    bpm: 80,
+    notes: [
+      ["drone", 4, 16],
+      ["E5", 4, 1],
+      ["D5", 5, 1],
+      ["C5", 6, 1],
+      ["A4", 7, 1],
+      ["C5", 8, 2],
+      ["E5", 10, 1],
+      ["G5", 11, 1],
+      ["E5", 12, 2],
+      ["D5", 14, 2],
+      ["A4", 16, 4],
+    ],
+  },
+];
+
+const ALBUMS = [
+  { id: "barrel", title: "First Barrel", line: "Learn the holes from the mouth down.", wash: "gold", songs: ["walk", "down"] },
+  { id: "climb", title: "The Climb", line: "Lift the fingers until the flute is open.", wash: "clay", songs: ["climb", "home"] },
+  { id: "river", title: "River", line: "Short steps, and the drone comes up for air.", wash: "river", songs: ["river", "ford"] },
+  { id: "dusk", title: "Dusk", line: "A phrase, then home on the low A.", wash: "dusk", songs: ["dusk", "ember"] },
+  { id: "drone", title: "The Drone", line: "The other barrel, held while the melody moves.", wash: "deep", songs: ["held", "under"] },
 ];
 
 const HOLES = [
@@ -180,6 +255,15 @@ const FREE_LOOK = 16;
 const TAKES_KEY = "flute-hero-takes";
 const WIN = 0.3;
 const PERFECT = 0.11;
+const OK = 0.2;
+const GRADE = {
+  perfect: { word: "Perfect", points: 120, hit: true, sparks: 8, color: "#ffcc66" },
+  ok: { word: "OK", points: 75, hit: true, sparks: 6, color: "#f6ead4" },
+  bad: { word: "Bad", points: 40, hit: true, sparks: 4, color: "#e4b48a" },
+  off: { word: "Off", points: 0, hit: false, sparks: 0, color: "#d15d4c" },
+  wrong: { word: "Wrong", points: 0, hit: false, sparks: 0, color: "#d15d4c" },
+};
+const GRADE_RANK = { wrong: 5, off: 4, perfect: 3, ok: 2, bad: 1 };
 
 const down = new Map();
 let droneHeld = false;
@@ -215,7 +299,10 @@ let combo = 0;
 let bestCombo = 0;
 let hits = 0;
 let misses = 0;
+let grades = { perfect: 0, ok: 0, bad: 0, off: 0, wrong: 0 };
 let floaters = [];
+let blasts = [];
+let frameCall = null;
 let motes = [];
 
 const $ = (id) => document.getElementById(id);
@@ -471,12 +558,20 @@ function startSong(id) {
   bestCombo = 0;
   hits = 0;
   misses = 0;
+  grades = { perfect: 0, ok: 0, bad: 0, off: 0, wrong: 0 };
   laneFlashes = [];
   floaters = [];
+  blasts = [];
+  frameCall = null;
   paused = false;
   startAt = audioCtx.currentTime + 0.12;
   guideBus.gain.value = guideOn ? 0.2 : 0;
   setDrone(false);
+  $("call").className = "call";
+  $("hit-count").textContent = "0";
+  $("combo").textContent = "0";
+  $("combo").classList.remove("hot");
+  $("score").textContent = "0";
   $("song-name").textContent = song.title;
   $("song-blurb").textContent = song.blurb;
   showScreen("screen-play");
@@ -494,7 +589,7 @@ function stopSong() {
 }
 
 function showScreen(id) {
-  for (const s of ["screen-title", "screen-select", "screen-play", "screen-free"]) {
+  for (const s of ["screen-title", "screen-map", "screen-select", "screen-play", "screen-free", "screen-flutes"]) {
     $(s).classList.toggle("hidden", s !== id);
   }
   $("screen-results").classList.add("hidden");
@@ -512,35 +607,85 @@ function finish() {
   $("result-score").textContent = String(score);
   $("result-acc").textContent = `${acc}%`;
   $("result-combo").textContent = String(bestCombo);
+  for (const name of ["perfect", "ok", "bad", "off", "wrong"]) {
+    $(`result-${name}`).textContent = String(grades[name]);
+  }
   $("screen-results").classList.remove("hidden");
+}
+
+function timingGrade(delta) {
+  if (delta <= PERFECT) return "perfect";
+  if (delta <= OK) return "ok";
+  return "bad";
+}
+
+const CALL_ICON = {
+  perfect: "sparkles",
+  ok: "star",
+  bad: "music",
+  off: "music-3",
+  wrong: "music-2",
+};
+
+function showCall(call) {
+  const el = $("call");
+  el.className = "call";
+  $("call-word").textContent = call.word;
+  $("call-points").textContent = call.points > 0 ? `+${call.points}` : "";
+  $("call-use").setAttribute("href", `assets/icons.svg#${CALL_ICON[call.quality]}`);
+  void el.offsetWidth;
+  el.className = `call show ${call.quality}`;
+}
+
+function land(note, quality) {
+  const spec = GRADE[quality];
+  note.state = spec.hit ? "hit" : "miss";
+  note.quality = quality;
+  grades[quality] += 1;
+  let gained = 0;
+  if (spec.hit) {
+    combo += 1;
+    bestCombo = Math.max(bestCombo, combo);
+    gained = Math.round(spec.points * (1 + Math.min(combo, 16) * 0.08));
+    score += gained;
+    hits += 1;
+    flashLanes(noteLanes(note));
+    if (!guideOn) blip(note.freq, audioCtx.currentTime, 0.12, 0.18, master);
+  } else {
+    combo = 0;
+    misses += 1;
+  }
+  blasts.push({
+    lane: note.lane,
+    at: performance.now(),
+    life: spec.hit ? 620 : 460,
+    sparks: spec.sparks,
+    color: spec.color,
+    rainbow: quality === "perfect",
+    miss: !spec.hit,
+    spin: Math.random() * Math.PI,
+  });
+  if (blasts.length > 36) blasts.splice(0, blasts.length - 36);
+  const rank = GRADE_RANK[quality];
+  if (!frameCall || rank > frameCall.rank) {
+    frameCall = { quality, word: spec.word, points: gained, rank };
+  } else if (gained) frameCall.points += gained;
 }
 
 function judge(beat) {
   const covers = playerCovers();
   const droneOn = playerDrone();
+  frameCall = null;
   for (const note of chart) {
     const matched = note.kind === "drone" ? droneOn : covers === note.covers;
+    const sounding = covers != null || droneOn;
     if (note.state === "pending" && beat >= note.t - WIN && beat <= note.t + WIN && matched) {
       const delta = beat <= note.t ? 0 : beat - note.t;
-      note.state = "hit";
-      note.quality = delta <= PERFECT ? "perfect" : "good";
-      const bonus = note.quality === "perfect" ? 100 : 55;
-      combo += 1;
-      bestCombo = Math.max(bestCombo, combo);
-      score += Math.round(bonus * (1 + Math.min(combo, 16) * 0.08));
-      hits += 1;
-      flashLanes(noteLanes(note));
-      floaters.push({
-        text: note.quality === "perfect" ? "Clean" : "Good",
-        lane: note.lane,
-        at: performance.now(),
-        good: true,
-      });
-      if (!guideOn) blip(note.freq, audioCtx.currentTime, 0.12, 0.18, master);
+      land(note, timingGrade(delta));
+    } else if (note.state === "pending" && beat >= note.t - WIN && beat <= note.t + WIN && !matched && sounding) {
+      note.clash = true;
     } else if (note.state === "pending" && beat > note.t + WIN) {
-      note.state = "miss";
-      combo = 0;
-      misses += 1;
+      land(note, note.clash ? "wrong" : "off");
     } else if (note.state === "hit" && !note.holdJudged) {
       if (beat > note.t + 0.22 && beat < note.t + note.d && !matched) note.broke = true;
       if (beat >= note.t + note.d - 0.04) {
@@ -557,6 +702,7 @@ function judge(beat) {
       } else if (when <= audioCtx.currentTime) note.guided = true;
     }
   }
+  if (frameCall) showCall(frameCall);
 }
 
 function fitFlutes() {
@@ -622,8 +768,17 @@ function frame() {
   const verdict = youVerdict(beat);
   if (verdict) heard.classList.add(verdict);
   paintFlute($("play-flute"), covers, show ? PITCHES[show.pitch].covers : null, youDrone);
-  $("score").textContent = String(score);
-  $("combo").textContent = String(combo);
+  const scoreEl = $("score");
+  if (scoreEl.textContent !== String(score)) {
+    scoreEl.textContent = String(score);
+    scoreEl.classList.remove("tick");
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add("tick");
+  }
+  $("hit-count").textContent = String(hits);
+  const comboEl = $("combo");
+  comboEl.textContent = String(combo);
+  comboEl.classList.toggle("hot", combo > 1);
   draw(beat);
   if (beat > songEnd() + 2) finish();
   else raf = requestAnimationFrame(frame);
@@ -732,6 +887,69 @@ function droneSpans(start, end) {
     if (b > a + 0.001) spans.push([a, b]);
   }
   return spans;
+}
+
+function drawSpark(x, y, size, color) {
+  ctx2d.beginPath();
+  ctx2d.moveTo(x, y - size);
+  ctx2d.lineTo(x + size * 0.28, y - size * 0.28);
+  ctx2d.lineTo(x + size, y);
+  ctx2d.lineTo(x + size * 0.28, y + size * 0.28);
+  ctx2d.lineTo(x, y + size);
+  ctx2d.lineTo(x - size * 0.28, y + size * 0.28);
+  ctx2d.lineTo(x - size, y);
+  ctx2d.lineTo(x - size * 0.28, y - size * 0.28);
+  ctx2d.closePath();
+  ctx2d.fillStyle = color;
+  ctx2d.fill();
+}
+
+function drawBlasts(column) {
+  const now = performance.now();
+  for (const blast of blasts) {
+    const age = (now - blast.at) / blast.life;
+    if (age >= 1) continue;
+    const a = laneAnchor(blast.lane, column);
+    const fade = 1 - age;
+    ctx2d.save();
+    ctx2d.globalAlpha = fade;
+    if (blast.miss) {
+      const s = a.r * (0.55 + age * 0.7);
+      ctx2d.strokeStyle = blast.color;
+      ctx2d.lineWidth = Math.max(3, a.r * 0.16);
+      ctx2d.lineCap = "round";
+      ctx2d.beginPath();
+      ctx2d.moveTo(a.x - s, a.y - s);
+      ctx2d.lineTo(a.x + s, a.y + s);
+      ctx2d.moveTo(a.x + s, a.y - s);
+      ctx2d.lineTo(a.x - s, a.y + s);
+      ctx2d.stroke();
+    } else {
+      const radius = a.r * (1.05 + age * 1.7);
+      ctx2d.lineWidth = Math.max(2, a.r * 0.12);
+      if (blast.rainbow) {
+        for (let i = 0; i < 6; i++) {
+          ctx2d.strokeStyle = `hsl(${i * 60 + 8}, 90%, 66%)`;
+          ctx2d.beginPath();
+          ctx2d.arc(a.x, a.y, radius, (i / 6) * Math.PI * 2, ((i + 1) / 6) * Math.PI * 2);
+          ctx2d.stroke();
+        }
+      } else {
+        ctx2d.strokeStyle = blast.color;
+        ctx2d.beginPath();
+        ctx2d.arc(a.x, a.y, radius, 0, Math.PI * 2);
+        ctx2d.stroke();
+      }
+      for (let i = 0; i < blast.sparks; i++) {
+        const ang = blast.spin + (i / blast.sparks) * Math.PI * 2;
+        const dist = a.r * (0.35 + age * 2.4);
+        const spark = a.r * (0.42 - age * 0.22);
+        const color = blast.rainbow ? `hsl(${(i * 48 + blast.spin * 40) % 360}, 92%, 66%)` : blast.color;
+        drawSpark(a.x + Math.cos(ang) * dist, a.y + Math.sin(ang) * dist, Math.max(3, spark), color);
+      }
+    }
+    ctx2d.restore();
+  }
 }
 
 function draw(beat) {
@@ -901,6 +1119,8 @@ function draw(beat) {
     ctx2d.fillText(floater.text, a.x + a.r + 8, a.y - age * 0.04);
     ctx2d.globalAlpha = 1;
   }
+
+  drawBlasts(column);
 }
 
 
@@ -1432,7 +1652,7 @@ function onRecord() {
   freeState = "countin";
 }
 
-function leaveFree() {
+function leaveFree(screen = "screen-map") {
   if (freeState === "recording") {
     closeFreeLive(freeBeat());
     if (recordNotes.length) {
@@ -1457,7 +1677,7 @@ function leaveFree() {
   freeState = "live";
   freeBpm = preferredBpm;
   hideSave();
-  showScreen("screen-select");
+  showScreen(screen);
 }
 
 async function startFree() {
@@ -1754,23 +1974,70 @@ function freeFrame() {
   if (freeRunning) freeRaf = requestAnimationFrame(freeFrame);
 }
 
-function bootSongs() {
-  const list = $("song-list");
-  SONGS.forEach((s) => {
+let albumIndex = 0;
+
+function turnAlbum(delta) {
+  const next = albumIndex + delta;
+  if (next < 0 || next >= ALBUMS.length) return;
+  albumIndex = next;
+  paintAlbum();
+}
+
+function paintAlbum() {
+  const album = ALBUMS[albumIndex];
+  $("story-bars").replaceChildren(
+    ...ALBUMS.map((item, i) => {
+      const bar = document.createElement("button");
+      bar.type = "button";
+      bar.className = i < albumIndex ? "done" : i === albumIndex ? "on" : "";
+      bar.setAttribute("aria-label", item.title);
+      bar.addEventListener("click", () => {
+        albumIndex = i;
+        paintAlbum();
+      });
+      return bar;
+    }),
+  );
+  const frame = $("story-frame");
+  frame.className = `story-frame ${album.wash}`;
+  const kicker = document.createElement("p");
+  kicker.className = "eyebrow";
+  kicker.textContent = `${String(albumIndex + 1).padStart(2, "0")}  /  0${ALBUMS.length}`;
+  const heading = document.createElement("h2");
+  heading.className = "story-title";
+  heading.textContent = album.title;
+  const line = document.createElement("p");
+  line.className = "story-line";
+  line.textContent = album.line;
+  const list = document.createElement("div");
+  list.className = "story-songs";
+  for (const id of album.songs) {
+    const tune = SONGS.find((song) => song.id === id);
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "song";
-    btn.innerHTML = `<b>${s.title}</b><span>${s.blurb}</span><em>${s.level}</em>`;
-    btn.addEventListener("click", () => startSong(s.id));
-    list.appendChild(btn);
-  });
+    btn.className = "story-song";
+    const copy = document.createElement("span");
+    const title = document.createElement("b");
+    title.textContent = tune.title;
+    const blurb = document.createElement("small");
+    blurb.textContent = tune.blurb;
+    copy.append(title, blurb);
+    const level = document.createElement("em");
+    level.textContent = tune.level;
+    btn.append(copy, level);
+    btn.addEventListener("click", () => startSong(tune.id));
+    list.append(btn);
+  }
+  frame.replaceChildren(kicker, heading, line, list);
+  $("story-prev").disabled = albumIndex === 0;
+  $("story-next").disabled = albumIndex === ALBUMS.length - 1;
 }
 
 let titleCovers = 0;
 function tickTitle() {
   titleCovers = (titleCovers + 1) % 7;
   const drone = titleCovers === 6 || titleCovers === 0;
-  for (const id of ["title-flute", "select-flute"]) paintFlute($(id), titleCovers, titleCovers, drone);
+  paintFlute($("title-flute"), titleCovers, titleCovers, drone);
 }
 
 window.addEventListener("keydown", (e) => {
@@ -1781,6 +2048,11 @@ window.addEventListener("keydown", (e) => {
       if (menuPage === "root") closeMenu();
       else showMenu(menuParent[menuPage] || "root");
     }
+    return;
+  }
+  if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !$("screen-select").classList.contains("hidden")) {
+    e.preventDefault();
+    turnAlbum(e.code === "ArrowRight" ? 1 : -1);
     return;
   }
   if (e.code === "Space") {
@@ -1795,7 +2067,9 @@ window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") {
       if (freeRunning) leaveFree();
       else if (song) stopSong();
-      else if (!$("screen-select").classList.contains("hidden")) showScreen("screen-title");
+      else if (!$("screen-flutes").classList.contains("hidden")) showScreen("screen-map");
+      else if (!$("screen-select").classList.contains("hidden")) showScreen("screen-map");
+      else if (!$("screen-map").classList.contains("hidden")) showScreen("screen-title");
     }
     return;
   }
@@ -1875,12 +2149,10 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("resize", resize);
 
 mountHoles($("title-flute"));
-mountHoles($("select-flute"));
 mountHoles($("play-flute"));
 mountHoles($("free-flute"));
 paintFlute($("title-flute"), 0, 0, false);
-paintFlute($("select-flute"), 0, 0, false);
-bootSongs();
+paintAlbum();
 function buildLabel() {
   const src = document.currentScript?.src || "";
   try {
@@ -2082,9 +2354,15 @@ function showMenu(page) {
 }
 
 function goSongs() {
-  if (freeRunning) leaveFree();
+  if (freeRunning) leaveFree("screen-select");
   else if (song) stopSong();
   else showScreen("screen-select");
+}
+
+function goFlutes() {
+  if (freeRunning) leaveFree();
+  else if (song) stopSong();
+  showScreen("screen-flutes");
 }
 
 function goFree() {
@@ -2109,9 +2387,7 @@ async function askMicAgain() {
 }
 
 function setMenuOpen(open) {
-  for (const id of ["menu", "menu-select", "menu-free"]) {
-    $(id).setAttribute("aria-expanded", open ? "true" : "false");
-  }
+  $("app-menu").setAttribute("aria-expanded", open ? "true" : "false");
 }
 function openMenu() {
   const panel = $("menu-panel");
@@ -2143,15 +2419,37 @@ $("menu-body").addEventListener("click", (event) => {
   } else if (go.dataset.go === "free") {
     closeMenu();
     goFree();
+  } else if (go.dataset.go === "flutes") {
+    closeMenu();
+    goFlutes();
   } else showMenu(go.dataset.go);
 });
 $("mic-ask").addEventListener("click", () => askMicAgain());
-$("menu").addEventListener("click", toggleMenu);
-$("menu-select").addEventListener("click", toggleMenu);
-$("menu-free").addEventListener("click", toggleMenu);
-$("begin").addEventListener("click", () => showScreen("screen-select"));
-$("select-back").addEventListener("click", () => showScreen("screen-title"));
+$("app-menu").addEventListener("click", toggleMenu);
+$("begin").addEventListener("click", () => showScreen("screen-map"));
+$("map-back").addEventListener("click", () => showScreen("screen-title"));
+$("pick-songs").addEventListener("click", () => showScreen("screen-select"));
+$("pick-flutes").addEventListener("click", () => showScreen("screen-flutes"));
 $("pick-free").addEventListener("click", () => startFree());
+$("select-back").addEventListener("click", () => showScreen("screen-map"));
+$("flutes-back").addEventListener("click", () => showScreen("screen-map"));
+$("story-prev").addEventListener("click", () => turnAlbum(-1));
+$("story-next").addEventListener("click", () => turnAlbum(1));
+let swipeX = null;
+$("story-frame").addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".story-song")) {
+    swipeX = null;
+    return;
+  }
+  swipeX = event.clientX;
+});
+$("story-frame").addEventListener("pointerup", (event) => {
+  if (swipeX == null) return;
+  const dx = event.clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) < 48) return;
+  turnAlbum(dx < 0 ? 1 : -1);
+});
 $("free-back").addEventListener("click", leaveFree);
 $("bpm-down").addEventListener("click", () => nudgeBpm(-1));
 $("bpm-up").addEventListener("click", () => nudgeBpm(1));
