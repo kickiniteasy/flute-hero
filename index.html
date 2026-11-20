@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=62" />
+    <link rel="stylesheet" href="styles.css?v=63" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -125,15 +125,23 @@
       <div class="play-bar">
         <p id="count" class="count">1</p>
         <div id="drone-pill" class="drone-pill">Drone · A4</div>
-        <button id="pause" class="text-btn icon-btn" type="button" aria-label="Pause">
-          <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="6" y="5" width="4.2" height="14" rx="1.2"></rect>
-            <rect x="13.8" y="5" width="4.2" height="14" rx="1.2"></rect>
-          </svg>
-          <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M8 5.2v13.6l11.2-6.8z"></path>
-          </svg>
-        </button>
+        <div class="play-transport">
+          <button id="restart" class="text-btn icon-btn" type="button" aria-label="Restart">
+            <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+              <path d="M3 3v5h5"></path>
+            </svg>
+          </button>
+          <button id="pause" class="text-btn icon-btn" type="button" aria-label="Pause">
+            <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6" y="5" width="4.2" height="14" rx="1.2"></rect>
+              <rect x="13.8" y="5" width="4.2" height="14" rx="1.2"></rect>
+            </svg>
+            <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5.2v13.6l11.2-6.8z"></path>
+            </svg>
+          </button>
+        </div>
         <div class="panel-actions">
           <button id="mic" class="text-btn icon-btn" type="button" aria-label="Use the flute" aria-pressed="false">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -465,6 +473,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=57"></script>
+    <script src="game.js?v=59"></script>
   </body>
 </html>

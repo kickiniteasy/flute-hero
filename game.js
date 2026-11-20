@@ -282,6 +282,7 @@ let micMelodyDb = -120;
 let micDroneDb = -120;
 let micError = "";
 let micEnergy = 0;
+let micHold = { key: "", n: 0 };
 let micPermission = "unknown";
 let micPromise = null;
 let micStream = null;
@@ -1136,14 +1137,117 @@ function draw(beat) {
 }
 
 
-const MELODY_BANDS = [
-  [5, "C5", 490, 548],
-  [4, "D5", 552, 625],
-  [3, "E5", 630, 700],
-  [2, "F#5", 705, 748],
-  [1, "G5", 752, 845],
-  [0, "A5", 850, 970],
+const HEAR_NOTES = [
+  { name: "C5", covers: 5, hz: 523.25 },
+  { name: "D5", covers: 4, hz: 587.33 },
+  { name: "E5", covers: 3, hz: 659.25 },
+  { name: "F#5", covers: 2, hz: 739.99 },
+  { name: "G5", covers: 1, hz: 783.99 },
+  { name: "A5", covers: 0, hz: 880 },
+  { name: "A4", covers: 6, hz: 440 },
 ];
+const TONE_PROM = 12;
+
+function toneAt(freq, sampleRate, fftSize, hz) {
+  const binHz = sampleRate / fftSize;
+  const center = hz / binHz;
+  const i0 = Math.max(1, Math.floor(center) - 3);
+  const i1 = Math.min(freq.length - 2, Math.ceil(center) + 3);
+  let peak = -120;
+  let bin = i0;
+  for (let i = i0; i <= i1; i++) {
+    if (freq[i] > peak) {
+      peak = freq[i];
+      bin = i;
+    }
+  }
+  const left = freq[bin - 1];
+  const right = freq[bin + 1];
+  const denom = left - 2 * peak + right;
+  const delta = denom === 0 ? 0 : (0.5 * (left - right)) / denom;
+  const floors = [];
+  for (let i = bin - 8; i <= bin + 8; i++) {
+    if (i < 1 || i >= freq.length || Math.abs(i - bin) <= 3) continue;
+    floors.push(freq[i]);
+  }
+  floors.sort((a, b) => a - b);
+  const floor = floors.length ? floors[Math.floor(floors.length / 2)] : -120;
+  return { db: peak, hz: (bin + delta) * binHz, prom: peak - floor };
+}
+
+function extraPeak(freq, sampleRate, fftSize, hz, radiusHz) {
+  const binHz = sampleRate / fftSize;
+  const a = Math.max(1, Math.floor((hz - radiusHz) / binHz));
+  const b = Math.min(freq.length - 2, Math.ceil((hz + radiusHz) / binHz));
+  let peakDb = -120;
+  let peakBin = a;
+  for (let i = a; i <= b; i++) {
+    if (freq[i] > peakDb) {
+      peakDb = freq[i];
+      peakBin = i;
+    }
+  }
+  for (let i = a + 1; i < b; i++) {
+    if (Math.abs(i - peakBin) < 2) continue;
+    if (freq[i] > freq[i - 1] && freq[i] > freq[i + 1] && freq[i] > peakDb - 8) return true;
+  }
+  return false;
+}
+
+function secondBarrel(freq, sampleRate, fftSize, low) {
+  if (!(low.prom >= TONE_PROM)) return false;
+  for (const k of [2, 3, 4]) {
+    const partial = toneAt(freq, sampleRate, fftSize, low.hz * k);
+    if (partial.prom >= TONE_PROM && Math.abs(low.hz * k - partial.hz) > 8) return true;
+    if (extraPeak(freq, sampleRate, fftSize, low.hz * k, 14 * k)) return true;
+  }
+  return extraPeak(freq, sampleRate, fftSize, low.hz, 30);
+}
+
+function hearFlute(freq, sampleRate, fftSize) {
+  const tones = HEAR_NOTES.map((note) => {
+    const heard = toneAt(freq, sampleRate, fftSize, note.hz);
+    return { name: note.name, covers: note.covers, target: note.hz, db: heard.db, hz: heard.hz, prom: heard.prom };
+  });
+  const low = tones.find((tone) => tone.name === "A4");
+  let pool = tones.filter((tone) => tone.prom >= TONE_PROM && Math.abs(tone.hz - tone.target) <= 22);
+  const a4 = pool.find((tone) => tone.name === "A4");
+  const a5 = pool.find((tone) => tone.name === "A5");
+  if (a4 && a5 && a5.db <= a4.db + 0.5) {
+    const third = toneAt(freq, sampleRate, fftSize, 1320);
+    const sixth = toneAt(freq, sampleRate, fftSize, 2640);
+    const highConfirms = sixth.prom >= TONE_PROM && sixth.db > third.db;
+    if (!highConfirms) pool = pool.filter((tone) => tone.name !== "A5");
+  }
+  let melody = null;
+  for (const tone of pool) if (!melody || tone.db > melody.db) melody = tone;
+  const droneTone = low.prom >= TONE_PROM && Math.abs(low.hz - 440) <= 22;
+  let drone = false;
+  if (!melody && droneTone) melody = low;
+  if (melody && melody.name !== "A4") drone = droneTone;
+  else if (melody && melody.name === "A4") drone = secondBarrel(freq, sampleRate, fftSize, low);
+  const melodyDb = melody ? melody.db : -120;
+  const droneDb = low.db;
+  if (!melody) {
+    return {
+      covers: null,
+      drone: false,
+      label: "",
+      melodyDb,
+      droneDb,
+      detail: low.prom > 4 ? `No clear note · 440 Hz ${Math.round(low.db)} dB` : "No pitch",
+    };
+  }
+  const droneWord = drone ? "drone on" : "drone off";
+  return {
+    covers: melody.covers,
+    drone,
+    label: melody.name,
+    melodyDb,
+    droneDb,
+    detail: `${melody.name} ${Math.round(melody.db)} dB · 440 Hz ${Math.round(low.db)} dB, prominence ${Math.round(low.prom)} · ${droneWord}`,
+  };
+}
 
 let micGeneration = 0;
 
@@ -1164,6 +1268,7 @@ function stopMic() {
   micEnergy = 0;
   micError = "";
   micPromise = null;
+  micHold = { key: "", n: 0 };
   micStream?.getTracks().forEach((t) => t.stop());
   micStream = null;
   setMicButton(false);
@@ -1222,24 +1327,38 @@ function toggleMic() {
   else startMic(true);
 }
 
+function commitHeard(heard) {
+  micDetail = heard.detail;
+  micMelodyDb = heard.melodyDb;
+  micDroneDb = heard.droneDb;
+  const key = `${heard.covers ?? "-"}:${heard.drone ? 1 : 0}:${heard.label}`;
+  if (heard.covers == null && !heard.drone) {
+    micHold = { key, n: 0 };
+    micCovers = null;
+    micDrone = false;
+    micLabel = "";
+    return;
+  }
+  micHold = key === micHold.key ? { key, n: micHold.n + 1 } : { key, n: 1 };
+  if (micHold.n < 3) return;
+  micCovers = heard.covers;
+  micDrone = heard.drone;
+  micLabel = heard.label;
+}
+
 function openMic(stream) {
   const source = audioCtx.createMediaStreamSource(stream);
   const analyser = audioCtx.createAnalyser();
   analyser.fftSize = 4096;
-  analyser.smoothingTimeConstant = 0.45;
+  analyser.minDecibels = -110;
+  analyser.maxDecibels = 0;
+  analyser.smoothingTimeConstant = 0.25;
   source.connect(analyser);
   const time = new Float32Array(analyser.fftSize);
   const freq = new Float32Array(analyser.frequencyBinCount);
-  const bandPeak = (lo, hi) => {
-    const hz = audioCtx.sampleRate / analyser.fftSize;
-    const a = Math.max(0, Math.floor(lo / hz));
-    const b = Math.min(freq.length - 1, Math.ceil(hi / hz));
-    let peak = -120;
-    for (let i = a; i <= b; i++) if (freq[i] > peak) peak = freq[i];
-    return peak;
-  };
   micOn = true;
   micError = "";
+  micHold = { key: "", n: 0 };
   setMicButton(true);
   const listen = () => {
     if (!micOn) return;
@@ -1249,47 +1368,10 @@ function openMic(stream) {
     energy = Math.sqrt(energy / (time.length / 8));
     micEnergy = energy;
     if (energy < 0.015) {
-      micCovers = null;
-      micDrone = false;
-      micLabel = "";
-      micMelodyDb = -120;
-      micDroneDb = -120;
-      micDetail = "Quiet";
+      commitHeard({ covers: null, drone: false, label: "", melodyDb: -120, droneDb: -120, detail: "Quiet" });
     } else {
       analyser.getFloatFrequencyData(freq);
-      const droneDb = bandPeak(405, 470);
-      let best = null;
-      for (const [covers, name, lo, hi] of MELODY_BANDS) {
-        const db = bandPeak(lo, hi);
-        if (!best || db > best.db) best = { covers, name, db };
-      }
-      const quiet = -50;
-      const octaveOfDrone = best && best.covers === 0 && best.db < droneDb + 2;
-      const melody = best && best.db > quiet && !octaveOfDrone ? best : null;
-      micMelodyDb = best ? best.db : -120;
-      micDroneDb = droneDb;
-      if (melody) {
-        micCovers = melody.covers;
-        micLabel = melody.name;
-        micDrone = droneDb > -46 && droneDb > melody.db - 14;
-        micDetail = `${melody.name} ${Math.round(melody.db)} dB · drone ${Math.round(droneDb)} dB · ${micDrone ? "drone counted" : "drone not counted"}`;
-      } else if (droneDb > -46) {
-        micCovers = 6;
-        micLabel = "A4";
-        micDrone = true;
-        micDetail = octaveOfDrone
-          ? `High A ${Math.round(best.db)} dB sat on the drone's octave, so this is A4 and drone`
-          : `440 Hz ${Math.round(droneDb)} dB · low A and the drone share this pitch`;
-      } else {
-        micCovers = null;
-        micDrone = false;
-        micLabel = "";
-        micDetail = octaveOfDrone
-          ? `High A ${Math.round(best.db)} dB looked like the drone's octave`
-          : best
-            ? `Loudest ${best.name} ${Math.round(best.db)} dB, under the line to call a note`
-            : "No pitch";
-      }
+      commitHeard(hearFlute(freq, audioCtx.sampleRate, analyser.fftSize));
     }
     requestAnimationFrame(listen);
   };
@@ -1335,6 +1417,7 @@ let trackBuffer = null;
 let trackName = "";
 let trackId = "";
 let trackPeaks = [];
+let trackBpmGuess = null;
 let trackSource = null;
 let trackPlaying = false;
 let trackStartBeat = null;
@@ -1404,9 +1487,35 @@ function tempoLocked() {
   return freeState === "recording" || freeState === "countin" || trackPlaying;
 }
 
+function trackTempoId() {
+  if (!trackBuffer) return "";
+  return `${trackId}|${trackName}|${Math.round(trackBuffer.duration)}`;
+}
+
+function savedTempoTouch() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("flute-hero-bpm-touch") || "null");
+    if (saved && saved.id === trackTempoId() && saved.bpm >= 40 && saved.bpm <= 208) return Math.round(saved.bpm);
+  } catch {
+    /* the browser can refuse storage */
+  }
+  return null;
+}
+
+function rememberTempoTouch() {
+  const id = trackTempoId();
+  if (!id) return;
+  try {
+    localStorage.setItem("flute-hero-bpm-touch", JSON.stringify({ id, bpm: freeBpm }));
+  } catch {
+    /* the browser can refuse storage */
+  }
+}
+
 function nudgeBpm(delta) {
   if (tempoLocked()) return;
   setFreeBpm(freeBpm + delta, false);
+  rememberTempoTouch();
 }
 
 function loadTakes() {
@@ -1794,8 +1903,9 @@ function enterRecording(originBeat) {
 function onTrackPlay() {
   if (!trackBuffer) return;
   if (freeState === "recording" || freeState === "countin" || freeState === "review") return;
-  if (trackPlaying) {
+  if (trackPlaying || trackPreview) {
     stopTrack();
+    if ($("free-settings").open) paintTrackCard();
     return;
   }
   if (freeState === "replay") {
@@ -1988,10 +2098,11 @@ function paintFreeChrome(beat) {
   $("bpm-down").disabled = locked;
   $("bpm-up").disabled = locked;
   const play = $("free-play");
+  const trackOn = trackPlaying || Boolean(trackPreview);
   play.classList.toggle("hidden", !trackBuffer);
-  play.classList.toggle("is-on", trackPlaying);
-  play.disabled = freeState === "recording" || freeState === "countin" || freeState === "review" || (freeState === "replay" && replayTrackOffset == null);
-  play.setAttribute("aria-label", trackPlaying ? "Stop track" : trackName ? `Play ${trackName}` : "Play track");
+  play.classList.toggle("is-on", trackOn);
+  play.disabled = !trackPreview && (freeState === "recording" || freeState === "countin" || freeState === "review" || (freeState === "replay" && replayTrackOffset == null));
+  play.setAttribute("aria-label", trackOn ? "Stop track" : trackName ? `Play ${trackName}` : "Play track");
   $("free-reset").disabled = freeState === "recording" || freeState === "review";
   const rec = $("free-record");
   rec.classList.toggle("hidden", freeState === "review");
@@ -2313,6 +2424,7 @@ window.addEventListener("keyup", (e) => {
 $("back").addEventListener("click", stopSong);
 $("results-songs").addEventListener("click", stopSong);
 $("again").addEventListener("click", () => song && startSong(song.id));
+$("restart").addEventListener("click", () => song && startSong(song.id));
 function setPauseButton(isPaused) {
   const btn = $("pause");
   btn.classList.toggle("is-paused", isPaused);
@@ -2688,9 +2800,10 @@ function syncFreeSettings() {
 
 function trackStatus() {
   if (trackLoading) return "Music under the flute. Loading…";
-  if (trackPreview) return "Music under the flute. Playing a test.";
-  if (trackPlaying) return "Music under the flute. Playing with the beat.";
-  if (trackBuffer) return "Music under the flute. Ready to play.";
+  const about = trackBpmGuess ? `, about ${trackBpmGuess} bpm` : "";
+  if (trackPreview) return `Music under the flute. Playing${about}.`;
+  if (trackPlaying) return `Music under the flute. Playing with the beat${about}.`;
+  if (trackBuffer) return `Music under the flute. Ready to play${about}.`;
   return "Music under the flute. None selected.";
 }
 
@@ -2708,7 +2821,7 @@ function paintTrackCard() {
   const preview = $("track-preview");
   preview.disabled = !trackBuffer || busy || trackLoading;
   preview.textContent = trackPreview || trackPlaying ? "Stop" : "Play";
-  preview.setAttribute("aria-label", trackPreview || trackPlaying ? "Stop the backing track" : "Play a test");
+  preview.setAttribute("aria-label", trackPreview || trackPlaying ? "Stop the backing track" : "Play the backing track");
   if (!trackBuffer) {
     canvas.classList.add("hidden");
     return;
@@ -2789,6 +2902,144 @@ function hideFileOption() {
   option.textContent = "Your file";
 }
 
+function correlateFlux(env, frames, minLag, maxLag) {
+  const flux = new Float32Array(frames);
+  for (let i = 1; i < frames; i++) {
+    const d = env[i] - env[i - 1];
+    if (d > 0) flux[i] = d;
+  }
+  let mean = 0;
+  for (let i = 0; i < frames; i++) mean += flux[i];
+  mean /= frames;
+  let energy = 0;
+  for (let i = 0; i < frames; i++) {
+    flux[i] -= mean;
+    energy += flux[i] * flux[i];
+  }
+  energy /= frames || 1;
+  const corr = new Float32Array(maxLag + 1);
+  if (energy < 1e-10) return corr;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    const n = frames - lag;
+    for (let i = 0; i < n; i++) sum += flux[i] * flux[i + lag];
+    corr[lag] = sum / n / energy;
+  }
+  return corr;
+}
+
+function estimateBpm(buffer) {
+  const rate = buffer.sampleRate;
+  const total = buffer.length;
+  if (!rate || total < rate * 1.1) return null;
+  let from = 0;
+  let to = total;
+  if (total > rate * 50) {
+    from = Math.floor(rate * 8);
+    to = Math.min(total, from + Math.floor(rate * 36));
+  } else if (total > rate * 48) {
+    to = Math.floor(rate * 48);
+  }
+  const channels = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  const frame = Math.max(1, Math.round(rate / 200));
+  const frames = Math.floor((to - from) / frame);
+  if (frames < 80) return null;
+  const aLow = Math.exp((-2 * Math.PI * 140) / rate);
+  const aHigh = Math.exp((-2 * Math.PI * 1400) / rate);
+  const low = new Float32Array(frames);
+  const high = new Float32Array(frames);
+  const full = new Float32Array(frames);
+  let lp = 0;
+  let hp = 0;
+  let x1 = 0;
+  let accLow = 0;
+  let accHigh = 0;
+  let accFull = 0;
+  let count = 0;
+  let f = 0;
+  for (let i = from; i < to && f < frames; i++) {
+    let s = 0;
+    for (let c = 0; c < channels.length; c++) s += channels[c][i];
+    s /= channels.length;
+    lp = aLow * lp + (1 - aLow) * s;
+    hp = aHigh * (hp + s - x1);
+    x1 = s;
+    accLow += lp * lp;
+    accHigh += hp * hp;
+    accFull += s * s;
+    count += 1;
+    if (count === frame) {
+      low[f] = accLow;
+      high[f] = accHigh;
+      full[f] = accFull;
+      accLow = 0;
+      accHigh = 0;
+      accFull = 0;
+      count = 0;
+      f += 1;
+    }
+  }
+  const envRate = rate / frame;
+  const minLag = Math.max(1, Math.round((envRate * 60) / 208));
+  const maxLag = Math.min(frames - 2, Math.round((envRate * 60) / 40));
+  if (maxLag <= minLag + 2) return null;
+  const corrLow = correlateFlux(low, frames, minLag, maxLag);
+  const corrHigh = correlateFlux(high, frames, minLag, maxLag);
+  const corrFull = correlateFlux(full, frames, minLag, maxLag);
+  const at = (corr, lag) => {
+    if (lag <= 1 || lag >= corr.length - 1) return 0;
+    const i = Math.floor(lag);
+    const frac = lag - i;
+    return (1 - frac) * corr[i] + frac * corr[i + 1];
+  };
+  const ownAt = new Float32Array(209);
+  const scoreAt = new Float32Array(209);
+  let bestBpm = 0;
+  let bestScore = 0;
+  for (let bpm = 40; bpm <= 208; bpm++) {
+    const lag = (envRate * 60) / bpm;
+    const raw = 1.15 * at(corrLow, lag) + at(corrHigh, lag) + 0.65 * at(corrFull, lag);
+    const z = Math.log(bpm / 102) / Math.LN2;
+    const score = raw * Math.exp(-0.5 * (z / 0.55) ** 2);
+    ownAt[bpm] = raw;
+    scoreAt[bpm] = score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestBpm = bpm;
+    }
+  }
+  if (!bestBpm || bestScore < 0.05) return null;
+  const doubled = bestBpm * 2;
+  if (doubled <= 208 && ownAt[doubled] >= ownAt[bestBpm] * 0.92) {
+    bestBpm = doubled;
+    bestScore = scoreAt[doubled];
+  }
+  let rival = 0;
+  for (let bpm = 40; bpm <= 208; bpm++) {
+    if (Math.abs(bpm - bestBpm) <= 4) continue;
+    const ratio = bpm > bestBpm ? bpm / bestBpm : bestBpm / bpm;
+    if (ratio < 1.14 || Math.abs(ratio - 2) < 0.08) continue;
+    if (scoreAt[bpm] > rival) rival = scoreAt[bpm];
+  }
+  if (rival > 0 && bestScore < rival * 1.12) return null;
+  return bestBpm;
+}
+
+function tempoHint() {
+  if (trackBpmGuess) return `Guessed ${trackBpmGuess} bpm. Nudge it if the click misses.`;
+  return "Tap along to set the tempo.";
+}
+
+function applyTrackTempo() {
+  if (freeState !== "live" || tempoLocked()) return;
+  const touched = savedTempoTouch();
+  if (touched) setFreeBpm(touched, false);
+  else if (trackBpmGuess) setFreeBpm(trackBpmGuess, false);
+  const hint = $("free-tap-hint");
+  if (hint && tapTimes.length < 2) hint.textContent = tempoHint();
+}
+
 function useTrack(audio, name, id) {
   stopTrack();
   trackStartBeat = null;
@@ -2796,6 +3047,8 @@ function useTrack(audio, name, id) {
   trackName = name;
   trackId = id;
   trackPeaks = peaksFromBuffer(audio);
+  trackBpmGuess = estimateBpm(audio);
+  applyTrackTempo();
   trackLoading = false;
   trackPending = "";
   if (id === "file") showFileOption(name);
@@ -2869,6 +3122,7 @@ function clearTrack() {
   trackName = "";
   trackId = "";
   trackPeaks = [];
+  trackBpmGuess = null;
   trackStartBeat = null;
   hideFileOption();
   rememberBacking("");
@@ -2924,12 +3178,13 @@ function onTapTempo() {
   let sum = 0;
   for (let i = 1; i < tapTimes.length; i++) sum += tapTimes[i] - tapTimes[i - 1];
   setFreeBpm(Math.round(60000 / (sum / (tapTimes.length - 1))), false);
+  rememberTempoTouch();
   hint.textContent = `${freeBpm} bpm`;
 }
 
 function openFreeSettings() {
   tapTimes = [];
-  $("free-tap-hint").textContent = "Tap along to set the tempo.";
+  $("free-tap-hint").textContent = tempoHint();
   syncFreeSettings();
   paintTrackCard();
   const panel = $("free-settings");
@@ -2937,7 +3192,6 @@ function openFreeSettings() {
 }
 
 function closeFreeSettings() {
-  if (trackPreview) stopPreview();
   const panel = $("free-settings");
   if (panel.open) panel.close();
 }

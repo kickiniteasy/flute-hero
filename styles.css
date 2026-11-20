@@ -1068,8 +1068,8 @@ h1 {
 
 .play-bar {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) minmax(180px, 1.3fr);
-  grid-template-areas: "count drone heard actions";
+  grid-template-columns: auto auto minmax(0, 1fr) auto minmax(180px, 1.3fr);
+  grid-template-areas: "count drone heard transport actions";
   align-items: center;
   column-gap: 14px;
   row-gap: 8px;
@@ -1079,8 +1079,14 @@ h1 {
 }
 .count { grid-area: count; }
 .drone-pill { grid-area: drone; }
+.play-transport { grid-area: transport; }
 .panel-actions { grid-area: actions; }
 #heard { grid-area: heard; }
+.play-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .count {
   width: 48px;
   height: 48px;
@@ -1756,7 +1762,7 @@ h1 {
   .play-bar {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "count drone pause"
+      "count drone transport"
       "actions actions actions"
       "heard heard heard";
     min-height: 112px;
