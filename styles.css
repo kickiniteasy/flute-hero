@@ -379,7 +379,15 @@ h1 {
   border-color: var(--gold);
 }
 
-#heard { min-height: 1.2em; margin: 0; }
+#heard {
+  min-height: 1.2em;
+  min-width: 7.5em;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
 
 .overlay {
   position: fixed;

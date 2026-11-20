@@ -189,8 +189,11 @@ let guideBus = null;
 let guideOn = true;
 let micOn = false;
 let micCovers = null;
+let micDrone = false;
 let micLabel = "";
 let micStream = null;
+let wakeLock = null;
+let laneFlashes = [];
 let raf = 0;
 
 let song = null;
@@ -325,6 +328,107 @@ function playerCovers() {
   return latest;
 }
 
+function playerDrone() {
+  if (micOn) return micDrone;
+  return droneHeld;
+}
+
+function youLine() {
+  const covers = playerCovers();
+  const drone = playerDrone();
+  const names = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
+  const note = micOn && micLabel ? micLabel : covers == null ? "" : names[covers];
+  if (micOn && !note && !drone) return "Listening";
+  if (note && drone) return `${note} · drone`;
+  if (drone) return "Drone";
+  return note;
+}
+
+function lanePlayed(lane, covers, drone) {
+  if (lane === DRONE_LANE) return Boolean(drone);
+  if (covers == null) return false;
+  if (lane === OPEN_LANE) return true;
+  return lane < covers;
+}
+
+function dueChart(beat) {
+  let melody = null;
+  let drone = false;
+  for (const note of chart) {
+    const judging =
+      note.state === "hit"
+        ? beat <= note.t + note.d
+        : note.state === "pending" && beat >= note.t - WIN && beat <= note.t + WIN;
+    if (!judging) continue;
+    if (note.kind === "drone") drone = true;
+    else melody = note;
+  }
+  return { melody, drone };
+}
+
+function laneVerdict(lane, beat) {
+  const covers = playerCovers();
+  const drone = playerDrone();
+  const on = lanePlayed(lane, covers, drone);
+  const due = dueChart(beat);
+  if (lane === DRONE_LANE) {
+    if (due.drone && drone) return "right";
+    if (!due.drone && drone && due.melody) return "wrong";
+    return on ? "you" : "idle";
+  }
+  if (!due.melody) return on ? "you" : "idle";
+  if (covers === due.melody.covers && on) return "right";
+  if (on) return "wrong";
+  return "idle";
+}
+
+function youVerdict(beat) {
+  const due = dueChart(beat);
+  const covers = playerCovers();
+  const drone = playerDrone();
+  if (covers == null && !drone) return "";
+  if (!due.melody && !due.drone) return "you";
+  const melodyOk = !due.melody || covers === due.melody.covers;
+  const droneOk = due.drone ? drone : !drone;
+  return melodyOk && droneOk ? "right" : "wrong";
+}
+
+function expectation(beat) {
+  let melody = null;
+  let drone = false;
+  for (const note of chart) {
+    if (note.state === "miss") continue;
+    if (beat < note.t - WIN || beat > note.t + note.d) continue;
+    if (note.kind === "drone") drone = true;
+    else if (!melody || note.t < melody.t) melody = note;
+  }
+  return { melody, drone, active: melody != null || drone };
+}
+
+function laneMark(lane, covers, drone, expect) {
+  const on = lanePlayed(lane, covers, drone);
+  if (!on) return "off";
+  if (!expect.active) return "you";
+  if (lane === DRONE_LANE) return expect.drone ? "right" : "wrong";
+  if (!expect.melody) return "you";
+  return lanePlayed(lane, expect.melody.covers, false) ? "right" : "wrong";
+}
+
+function flashLanes(lanes) {
+  const at = performance.now();
+  for (const lane of lanes) laneFlashes.push({ lane, at });
+  if (laneFlashes.length > 48) laneFlashes.splice(0, laneFlashes.length - 48);
+}
+
+async function keepAwake() {
+  if (!navigator.wakeLock || document.visibilityState !== "visible") return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+  } catch {
+    wakeLock = null;
+  }
+}
+
 function targetAt(beat) {
   let current = null;
   let next = null;
@@ -348,6 +452,7 @@ function songEnd() {
 
 function startSong(id) {
   ensureAudio();
+  keepAwake();
   audioCtx.resume();
   song = SONGS.find((s) => s.id === id);
   chart = song.notes.map(([pitch, t, d]) => {
@@ -386,6 +491,7 @@ function startSong(id) {
   bestCombo = 0;
   hits = 0;
   misses = 0;
+  laneFlashes = [];
   floaters = [];
   paused = false;
   startAt = audioCtx.currentTime + 0.12;
@@ -427,8 +533,9 @@ function finish() {
 
 function judge(beat) {
   const covers = playerCovers();
+  const droneOn = playerDrone();
   for (const note of chart) {
-    const matched = note.kind === "drone" ? droneHeld : covers === note.covers;
+    const matched = note.kind === "drone" ? droneOn : covers === note.covers;
     if (note.state === "pending" && beat >= note.t - WIN && beat <= note.t + WIN && matched) {
       const delta = beat <= note.t ? 0 : beat - note.t;
       note.state = "hit";
@@ -438,11 +545,12 @@ function judge(beat) {
       bestCombo = Math.max(bestCombo, combo);
       score += Math.round(bonus * (1 + Math.min(combo, 16) * 0.08));
       hits += 1;
+      flashLanes(noteLanes(note));
       floaters.push({
         text: note.quality === "perfect" ? "Clean" : "Good",
         lane: note.lane,
-        y: 0.8,
-        life: 1,
+        at: performance.now(),
+        good: true,
       });
       if (!guideOn) blip(note.freq, audioCtx.currentTime, 0.12, 0.18, master);
     } else if (note.state === "pending" && beat > note.t + WIN) {
@@ -507,19 +615,24 @@ function frame() {
   if (!song) return;
   const beat = songBeat();
   judge(beat);
-  const { current, next, droneNow } = targetAt(beat);
+  const { current, next } = targetAt(beat);
   const covers = playerCovers();
   const show = current || (next && next.t - beat < 1.2 ? next : null);
   const count = $("count");
   const n = (Math.floor(Math.max(0, beat)) % 4) + 1;
   if (count.textContent !== String(n)) count.textContent = String(n);
   count.classList.toggle("down", n === 1);
-  const drone = Boolean(droneNow) || droneHeld;
-  $("drone-pill").classList.toggle("on", drone);
-  paintFlute($("play-flute"), covers, show ? PITCHES[show.pitch].covers : null, drone);
+  const youDrone = playerDrone();
+  $("drone-pill").classList.toggle("on", youDrone);
+  const heard = $("heard");
+  heard.textContent = youLine();
+  heard.classList.remove("right", "wrong", "you");
+  const verdict = youVerdict(beat);
+  if (verdict) heard.classList.add(verdict);
+  paintFlute($("play-flute"), covers, show ? PITCHES[show.pitch].covers : null, youDrone);
   $("score").textContent = String(score);
   $("combo").textContent = String(combo);
-  draw(beat, current, droneNow);
+  draw(beat);
   if (beat > songEnd() + 2) finish();
   else raf = requestAnimationFrame(frame);
 }
@@ -628,7 +741,7 @@ function droneSpans(start, end) {
   return spans;
 }
 
-function draw(beat, current, droneNow) {
+function draw(beat) {
   const w = canvas.width;
   const h = canvas.height;
   ctx2d.clearRect(0, 0, w, h);
@@ -732,27 +845,46 @@ function draw(beat, current, droneNow) {
   }
   }
 
+  const coversNow = playerCovers();
+  const droneYou = playerDrone();
+  const expect = expectation(beat);
+  const flashNow = performance.now();
   for (const t of tracks) {
-    const hot =
-      t.lane === DRONE_LANE
-        ? droneNow
-        : t.lane === OPEN_LANE
-          ? Boolean(current)
-          : current && t.lane < current.covers;
-    const withDrone = hot && droneNow && t.lane !== DRONE_LANE;
-    const droneHot = (hot && t.lane === DRONE_LANE) || withDrone;
-    const ink = droneHot ? droneInk(t.x - t.r, t.x + t.r, t.y) : hot ? laneColor(t.lane, 1) : laneColor(t.lane, 0.95);
+    const mark = laneMark(t.lane, coversNow, droneYou, expect);
+    const on = mark !== "off";
+    let burst = 0;
+    if (mark === "right") {
+      for (const flash of laneFlashes) {
+        if (flash.lane !== t.lane) continue;
+        const left = 1 - (flashNow - flash.at) / 380;
+        if (left > burst) burst = left;
+      }
+    }
     ctx2d.beginPath();
     ctx2d.arc(t.x, t.y, t.r, 0, Math.PI * 2);
-    ctx2d.lineWidth = Math.max(3, t.r * (withDrone ? 0.28 : 0.18));
-    ctx2d.fillStyle = "rgba(9, 8, 7, 0.92)";
+    ctx2d.lineWidth = Math.max(3, t.r * (on ? 0.22 : 0.12));
+    if (mark === "wrong") ctx2d.fillStyle = "#d15d4c";
+    else if (burst > 0.45) ctx2d.fillStyle = "#fff6e4";
+    else if (on && t.lane === DRONE_LANE) ctx2d.fillStyle = droneInk(t.x - t.r, t.x + t.r, t.y);
+    else if (on) ctx2d.fillStyle = laneColor(t.lane, 1);
+    else ctx2d.fillStyle = "rgba(9, 8, 7, 0.92)";
     ctx2d.fill();
-    ctx2d.strokeStyle = ink;
+    ctx2d.strokeStyle = mark === "wrong" ? "#ffb0a4" : on || burst > 0 ? "#fff6e4" : laneColor(t.lane, 0.4);
     ctx2d.stroke();
     ctx2d.beginPath();
-    ctx2d.arc(t.x, t.y, Math.max(3, t.r * 0.22), 0, Math.PI * 2);
-    ctx2d.fillStyle = droneHot ? ink : hot ? laneColor(t.lane, 1) : "rgba(246, 234, 212, 0.9)";
+    ctx2d.arc(t.x, t.y, Math.max(3, t.r * (on ? 0.26 : 0.16)), 0, Math.PI * 2);
+    ctx2d.fillStyle = on ? "#1a120c" : "rgba(246, 234, 212, 0.28)";
     ctx2d.fill();
+    if (burst > 0) {
+      ctx2d.save();
+      ctx2d.globalAlpha = burst;
+      ctx2d.strokeStyle = "#fff6e4";
+      ctx2d.lineWidth = 3;
+      ctx2d.beginPath();
+      ctx2d.arc(t.x, t.y, t.r * (1.08 + (1 - burst) * 0.85), 0, Math.PI * 2);
+      ctx2d.stroke();
+      ctx2d.restore();
+    }
   }
 
   ctx2d.textAlign = "right";
@@ -760,13 +892,8 @@ function draw(beat, current, droneNow) {
   ctx2d.font = `600 ${Math.max(12, w * 0.013)}px ui-sans-serif, system-ui, sans-serif`;
   for (const t of tracks) {
     const label = t.lane === DRONE_LANE ? "Drone" : t.lane === OPEN_LANE ? "Mouth" : String(t.lane + 1);
-    const hot =
-      t.lane === DRONE_LANE
-        ? droneNow
-        : t.lane === OPEN_LANE
-          ? Boolean(current)
-          : current && t.lane < current.covers;
-    ctx2d.fillStyle = hot ? laneColor(t.lane, 1) : "rgba(246,234,212,0.55)";
+    const mark = laneMark(t.lane, coversNow, droneYou, expect);
+    ctx2d.fillStyle = mark === "wrong" ? "#d15d4c" : mark === "off" ? "rgba(246,234,212,0.4)" : t.lane === DRONE_LANE ? "#ffcc66" : laneColor(t.lane, 1);
     ctx2d.fillText(label, w * 0.985, t.y);
   }
 
@@ -784,54 +911,23 @@ function draw(beat, current, droneNow) {
 }
 
 
-function freqToCovers(freq) {
-  if (freq >= 752 && freq < 852) return { covers: 1, name: freq >= 810 ? "G#5" : "G5" };
-  const bands = [
-    [6, "A4", 400, 475],
-    [5, "C5", 490, 548],
-    [4, "D5", 552, 625],
-    [3, "E5", 630, 705],
-    [2, "F#5", 708, 752],
-    [0, "A5", 852, 960],
-  ];
-  for (const [covers, name, lo, hi] of bands) {
-    if (freq >= lo && freq < hi) return { covers, name };
-  }
-  return null;
-}
-
-function correlate(buf, sampleRate, fMin, fMax) {
-  const n = buf.length;
-  const minLag = Math.max(2, Math.floor(sampleRate / fMax));
-  const maxLag = Math.min(n - 2, Math.floor(sampleRate / fMin));
-  let best = 0;
-  let bestLag = minLag;
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let corr = 0;
-    let e1 = 0;
-    let e2 = 0;
-    for (let i = 0; i < n - lag; i += 2) {
-      const a = buf[i];
-      const b = buf[i + lag];
-      corr += a * b;
-      e1 += a * a;
-      e2 += b * b;
-    }
-    const norm = corr / Math.sqrt(e1 * e2 + 1e-9);
-    if (norm > best) {
-      best = norm;
-      bestLag = lag;
-    }
-  }
-  return { freq: sampleRate / bestLag, conf: best };
-}
+const MELODY_BANDS = [
+  [5, "C5", 490, 548],
+  [4, "D5", 552, 625],
+  [3, "E5", 630, 700],
+  [2, "F#5", 705, 748],
+  [1, "G5", 752, 845],
+  [0, "A5", 850, 970],
+];
 
 async function toggleMic() {
   ensureAudio();
+  keepAwake();
   const resume = audioCtx.resume();
   if (micOn) {
     micOn = false;
     micCovers = null;
+    micDrone = false;
     micStream?.getTracks().forEach((t) => t.stop());
     $("mic").textContent = "Use the flute";
     $("mic").classList.remove("on");
@@ -857,30 +953,57 @@ async function toggleMic() {
   }
   const source = audioCtx.createMediaStreamSource(micStream);
   const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.45;
   source.connect(analyser);
-  const buf = new Float32Array(analyser.fftSize);
+  const time = new Float32Array(analyser.fftSize);
+  const freq = new Float32Array(analyser.frequencyBinCount);
+  const bandPeak = (lo, hi) => {
+    const hz = audioCtx.sampleRate / analyser.fftSize;
+    const a = Math.max(0, Math.floor(lo / hz));
+    const b = Math.min(freq.length - 1, Math.ceil(hi / hz));
+    let peak = -120;
+    for (let i = a; i <= b; i++) if (freq[i] > peak) peak = freq[i];
+    return peak;
+  };
   micOn = true;
   $("mic").textContent = "Mic on";
   $("mic").classList.add("on");
   const listen = () => {
     if (!micOn) return;
-    analyser.getFloatTimeDomainData(buf);
+    analyser.getFloatTimeDomainData(time);
     let energy = 0;
-    for (let i = 0; i < buf.length; i += 4) energy += buf[i] * buf[i];
-    energy = Math.sqrt(energy / (buf.length / 4));
-    if (energy < 0.02) {
+    for (let i = 0; i < time.length; i += 8) energy += time[i] * time[i];
+    energy = Math.sqrt(energy / (time.length / 8));
+    if (energy < 0.015) {
       micCovers = null;
+      micDrone = false;
       micLabel = "";
     } else {
-      const low = correlate(buf, audioCtx.sampleRate, 400, 480);
-      const high = correlate(buf, audioCtx.sampleRate, 500, 960);
-      const pick = high.conf > 0.62 && high.conf > low.conf * 0.72 ? high : low;
-      const found = pick.conf > 0.62 ? freqToCovers(pick.freq) : null;
-      micCovers = found ? found.covers : null;
-      micLabel = found ? found.name : "";
+      analyser.getFloatFrequencyData(freq);
+      const droneDb = bandPeak(405, 470);
+      let best = null;
+      for (const [covers, name, lo, hi] of MELODY_BANDS) {
+        const db = bandPeak(lo, hi);
+        if (!best || db > best.db) best = { covers, name, db };
+      }
+      const quiet = -50;
+      const octaveOfDrone = best && best.covers === 0 && best.db < droneDb + 2;
+      const melody = best && best.db > quiet && !octaveOfDrone ? best : null;
+      if (melody) {
+        micCovers = melody.covers;
+        micLabel = melody.name;
+        micDrone = droneDb > -46 && droneDb > melody.db - 14;
+      } else if (droneDb > -46) {
+        micCovers = 6;
+        micLabel = "A4";
+        micDrone = true;
+      } else {
+        micCovers = null;
+        micDrone = false;
+        micLabel = "";
+      }
     }
-    $("heard").textContent = micLabel ? `Hearing ${micLabel}` : micOn ? "Listening" : "";
     requestAnimationFrame(listen);
   };
   listen();
@@ -963,6 +1086,9 @@ $("guide").addEventListener("click", () => {
   if (guideBus) guideBus.gain.value = guideOn ? 0.2 : 0;
 });
 $("mic").addEventListener("click", () => toggleMic());
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && (song || micOn)) keepAwake();
+});
 window.addEventListener("resize", resize);
 
 mountHoles($("title-flute"));
