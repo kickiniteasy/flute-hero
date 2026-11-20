@@ -2,14 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=22" />
+    <link rel="stylesheet" href="styles.css?v=28" />
   </head>
   <body>
-    <section id="screen-title" class="screen">
+    <section id="screen-title" class="screen home">
       <div class="title-copy">
         <p class="eyebrow">A4 drone · 440 Hz</p>
         <h1>Flute Hero</h1>
@@ -18,15 +18,48 @@
           its own line: low A, with a fingering or without one. All the way
           open is the high A, one octave up.
         </p>
-        <div id="song-list" class="song-list"></div>
+        <button id="begin" class="solid begin" type="button">Begin</button>
         <div class="title-tools">
           <p class="key-legend">0 all open · 1 through 6 cover that many holes · space holds the drone</p>
-          <button id="menu-title" class="text-btn" type="button">Menu</button>
+          <button id="menu-title" class="text-btn icon-btn menu-corner" type="button" aria-label="Menu" aria-expanded="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16v1.8H4zM4 11.1h16v1.8H4zM4 15.2h16V17H4z"></path>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="title-stage">
         <div id="title-flute" class="flute-wrap">
           <img src="assets/flute.png" alt="A4 drone flute" />
+          <div class="glow"></div>
+          <div class="holes"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-select" class="screen home hidden">
+      <div class="title-copy">
+        <button id="select-back" class="text-btn back-link" type="button">Title</button>
+        <p class="eyebrow">Menu</p>
+        <h2 class="menu-heading">Choose</h2>
+        <button id="pick-free" class="song feature" type="button">
+          <b>Free Play</b>
+          <span>Microphone on. What you play leaves the flute and runs to the right.</span>
+          <em>Open</em>
+        </button>
+        <div id="song-list" class="song-list"></div>
+        <div class="title-tools">
+          <p class="key-legend">0 all open · 1 through 6 cover that many holes · space holds the drone</p>
+          <button id="menu-select" class="text-btn icon-btn menu-corner" type="button" aria-label="Menu" aria-expanded="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16v1.8H4zM4 11.1h16v1.8H4zM4 15.2h16V17H4z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="title-stage">
+        <div id="select-flute" class="flute-wrap">
+          <img src="assets/flute.png" alt="" />
           <div class="glow"></div>
           <div class="holes"></div>
         </div>
@@ -59,13 +92,106 @@
       <div class="play-bar">
         <p id="count" class="count">1</p>
         <div id="drone-pill" class="drone-pill">Drone · A4</div>
+        <button id="pause" class="text-btn icon-btn" type="button" aria-label="Pause">
+          <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="5" width="4.2" height="14" rx="1.2"></rect>
+            <rect x="13.8" y="5" width="4.2" height="14" rx="1.2"></rect>
+          </svg>
+          <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 5.2v13.6l11.2-6.8z"></path>
+          </svg>
+        </button>
         <div class="panel-actions">
-          <button id="pause" class="text-btn" type="button">Pause</button>
-          <button id="mic" class="text-btn" type="button">Use the flute</button>
-          <button id="guide" class="text-btn on" type="button">Guide on</button>
-          <button id="menu" class="text-btn" type="button">Menu</button>
+          <button id="mic" class="text-btn icon-btn" type="button" aria-label="Use the flute" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14.2a3.1 3.1 0 0 0 3.1-3.1V6.1a3.1 3.1 0 0 0-6.2 0v5a3.1 3.1 0 0 0 3.1 3.1z"></path>
+              <path d="M7.2 11.2a.95.95 0 0 0-1.9.15 6.7 6.7 0 0 0 5.75 6.35V20H8.6a.95.95 0 0 0 0 1.9h6.8a.95.95 0 0 0 0-1.9h-2.45v-2.3A6.7 6.7 0 0 0 18.7 11.35a.95.95 0 0 0-1.9-.15 4.8 4.8 0 0 1-9.6 0z"></path>
+            </svg>
+          </button>
+          <button id="guide" class="text-btn icon-btn on" type="button" aria-label="Sound on" aria-pressed="true">
+            <svg class="icon icon-sound" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9.2h3.4L11.2 5.6v12.8L7.4 14.8H4z"></path>
+              <path d="M14.2 8.6a4.2 4.2 0 0 1 0 6.8v-2.1a2.2 2.2 0 0 0 0-2.6z"></path>
+              <path d="M14.2 5.6a7.2 7.2 0 0 1 0 12.8v-2.05a5.1 5.1 0 0 0 0-8.7z"></path>
+            </svg>
+            <svg class="icon icon-mute" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9.2h3.4L11.2 5.6v12.8L7.4 14.8H4z"></path>
+              <path d="M14.4 9.2 19.6 14.4 18.3 15.7 13.1 10.5z"></path>
+              <path d="M19.6 9.2 14.4 14.4 15.7 15.7 20.9 10.5z"></path>
+            </svg>
+          </button>
+          <button id="menu" class="text-btn icon-btn" type="button" aria-label="Menu" aria-expanded="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16v1.8H4zM4 11.1h16v1.8H4zM4 15.2h16V17H4z"></path>
+            </svg>
+          </button>
         </div>
         <p id="heard"></p>
+      </div>
+    </section>
+
+    <section id="screen-free" class="screen hidden">
+      <header class="hud">
+        <button id="free-back" class="text-btn" type="button">Songs</button>
+        <div class="hud-title">
+          <div id="free-title">Free Play</div>
+          <div id="free-blurb">Notes leave the flute and run to the right.</div>
+        </div>
+        <div class="bpm-box">
+          <button id="bpm-down" class="text-btn icon-btn" type="button" aria-label="Slower">−</button>
+          <div class="bpm-read"><b id="bpm-value">80</b><span>bpm</span></div>
+          <button id="bpm-up" class="text-btn icon-btn" type="button" aria-label="Faster">+</button>
+        </div>
+      </header>
+      <div class="stage">
+        <canvas id="free-highway"></canvas>
+        <div id="free-flute" class="flute-wrap">
+          <div class="flute-body">
+            <img src="assets/flute.png" alt="" />
+            <div class="glow"></div>
+            <div class="open-mark"></div>
+            <div class="holes"></div>
+          </div>
+        </div>
+      </div>
+      <div class="play-bar free-play-bar">
+        <p id="free-count" class="count">1</p>
+        <div id="free-drone" class="drone-pill">Drone</div>
+        <div id="free-readout">
+          <p id="free-heard">Listening</p>
+          <p id="free-detail"></p>
+          <div id="free-meters" class="meters">
+            <div><span>Note</span><i><b id="meter-note"></b></i></div>
+            <div class="drone-meter"><span>Drone</span><i><b id="meter-drone"></b></i></div>
+          </div>
+        </div>
+        <div class="panel-actions">
+          <button id="free-metro" class="text-btn on" type="button" aria-pressed="true">Metro</button>
+          <button id="free-mic" class="text-btn icon-btn" type="button" aria-label="Use the flute" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14.2a3.1 3.1 0 0 0 3.1-3.1V6.1a3.1 3.1 0 0 0-6.2 0v5a3.1 3.1 0 0 0 3.1 3.1z"></path>
+              <path d="M7.2 11.2a.95.95 0 0 0-1.9.15 6.7 6.7 0 0 0 5.75 6.35V20H8.6a.95.95 0 0 0 0 1.9h6.8a.95.95 0 0 0 0-1.9h-2.45v-2.3A6.7 6.7 0 0 0 18.7 11.35a.95.95 0 0 0-1.9-.15 4.8 4.8 0 0 1-9.6 0z"></path>
+            </svg>
+          </button>
+          <button id="menu-free" class="text-btn icon-btn" type="button" aria-label="Menu" aria-expanded="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16v1.8H4zM4 11.1h16v1.8H4zM4 15.2h16V17H4z"></path>
+            </svg>
+          </button>
+          <button id="free-record" class="text-btn record-btn" type="button">Record</button>
+        </div>
+      </div>
+      <div id="save-bar" class="save-bar hidden">
+        <label class="save-label">Name
+          <input id="take-name" type="text" maxlength="48" autocomplete="off" enterkeyhint="done" />
+        </label>
+        <button id="take-keep" class="solid" type="button">Keep</button>
+        <button id="take-file" class="text-btn" type="button">Download</button>
+        <button id="take-discard" class="text-btn" type="button">Discard</button>
+      </div>
+      <div id="takes" class="takes hidden">
+        <p class="eyebrow">Saved</p>
+        <div id="takes-list" class="takes-list"></div>
       </div>
     </section>
 
@@ -86,17 +212,30 @@
       </div>
     </section>
 
-    <div id="menu-panel" class="menu-panel hidden">
-      <p class="eyebrow">Settings</p>
-      <label>
-        Drone
-        <select id="drone-look">
-          <option value="gold">Gold</option>
-          <option value="rainbow">Rainbow</option>
-        </select>
-      </label>
-    </div>
+    <dialog id="menu-panel" class="menu-modal" aria-labelledby="menu-heading">
+      <header class="menu-bar">
+        <p id="menu-heading" class="eyebrow">Settings</p>
+        <button id="menu-close" class="text-btn icon-btn" type="button" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.2 5 12 10.8 17.8 5 19 6.2 13.2 12 19 17.8 17.8 19 12 13.2 6.2 19 5 17.8 10.8 12 5 6.2z"></path>
+          </svg>
+        </button>
+      </header>
+      <div class="menu-body">
+        <label class="menu-row">
+          <span class="menu-copy">
+            <b>Drone</b>
+            <small>Gold or rainbow on the drone line.</small>
+          </span>
+          <select id="drone-look">
+            <option value="gold">Gold</option>
+            <option value="rainbow">Rainbow</option>
+          </select>
+        </label>
+      </div>
+      <p id="build-version" class="menu-version"></p>
+    </dialog>
 
-    <script src="game.js?v=33"></script>
+    <script src="game.js?v=39"></script>
   </body>
 </html>
