@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=63" />
+    <link rel="stylesheet" href="styles.css?v=64" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -30,7 +30,7 @@
           <span class="orbit reverse" style="--rx: 56%; --ry: 46%; --dur: 38s; --delay: -25s; --size: 26px; --ink: #fff6e4"><svg class="mark" viewBox="0 0 24 24"><use href="assets/icons.svg#sparkles"></use></svg></span>
         </div>
         <div id="title-flute" class="flute-wrap">
-          <img src="assets/flute.png" alt="" />
+          <img src="assets/flute-a4.png" alt="" />
           <div class="glow"></div>
           <div class="holes"></div>
         </div>
@@ -115,7 +115,7 @@
         </div>
         <div id="play-flute" class="flute-wrap">
           <div class="flute-body">
-            <img src="assets/flute.png" alt="" />
+            <img src="assets/flute-a4.png" alt="" />
             <div class="glow"></div>
             <div class="open-mark"></div>
             <div class="holes"></div>
@@ -180,7 +180,7 @@
         <canvas id="free-highway"></canvas>
         <div id="free-flute" class="flute-wrap">
           <div class="flute-body">
-            <img src="assets/flute.png" alt="" />
+            <img src="assets/flute-a4.png" alt="" />
             <div class="glow"></div>
             <div class="open-mark"></div>
             <div class="holes"></div>
@@ -249,36 +249,8 @@
       <button id="flutes-back" class="text-btn icon-btn" type="button" aria-label="Back">
         <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
       </button>
-      <div class="flute-open">
-        <img src="assets/flute.png" alt="" />
-        <div>
-          <p class="eyebrow">In hand</p>
-          <h2>A4 drone</h2>
-          <p>Six holes, covered from the mouth. The drone is the other barrel, its own line.</p>
-        </div>
-      </div>
-      <div class="flute-shut">
-        <article>
-          <img src="assets/flute.png" alt="" />
-          <b>G</b>
-          <span>Shut</span>
-        </article>
-        <article>
-          <img src="assets/flute.png" alt="" />
-          <b>Low D</b>
-          <span>Shut</span>
-        </article>
-        <article>
-          <img src="assets/flute.png" alt="" />
-          <b>F</b>
-          <span>Shut</span>
-        </article>
-        <article>
-          <img src="assets/flute.png" alt="" />
-          <b>Bamboo</b>
-          <span>Shut</span>
-        </article>
-      </div>
+      <div id="flute-in-hand" class="flute-open"></div>
+      <div id="flute-case" class="flute-case"></div>
     </section>
 
     <button id="app-menu" class="menu-plain" type="button" aria-label="Menu" aria-expanded="false">
@@ -339,7 +311,7 @@
           <button class="menu-nav" type="button" data-go="flutes">
             <span class="menu-copy">
               <b>Flutes</b>
-              <small>The A4 drone, and the ones still shut.</small>
+              <small>A4 or F#4 in hand. The rest stay shut.</small>
             </span>
           </button>
           <button class="menu-nav sub" type="button" data-go="settings">
@@ -473,6 +445,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=59"></script>
+    <script src="game.js?v=61"></script>
   </body>
 </html>

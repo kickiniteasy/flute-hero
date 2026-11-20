@@ -10,6 +10,52 @@ const PITCHES = {
 
 const LANES = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
 
+const FLUTES = {
+  a4: {
+    id: "a4",
+    name: "A4",
+    title: "A4 drone",
+    line: "Six holes, covered from the mouth. The drone is the other barrel, its own line.",
+    drone: 440,
+    notes: [880, 783.99, 739.99, 659.25, 587.33, 523.25, 440],
+    names: ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"],
+    art: "assets/flute-a4.png",
+  },
+  fs4: {
+    id: "fs4",
+    name: "F#4",
+    title: "F#4 drone",
+    line: "Open is F#5. Cover from the mouth: F5, D#5, C#5, B4, A4, then F#4. The drone is F#4.",
+    drone: 369.99,
+    notes: [739.99, 698.46, 622.25, 554.37, 493.88, 440, 369.99],
+    names: ["F#5", "F5", "D#5", "C#5", "B4", "A4", "F#4"],
+    art: "assets/flute-fs4.png",
+  },
+};
+const SHUT_FLUTES = [
+  { name: "G" },
+  { name: "Low D" },
+  { name: "F" },
+  { name: "Bamboo" },
+];
+const FLUTE_KEY = "flute-hero-flute";
+let fluteId = localStorage.getItem(FLUTE_KEY);
+if (!FLUTES[fluteId]) fluteId = "a4";
+
+function currentFlute() {
+  return FLUTES[fluteId];
+}
+
+function shownNote(id) {
+  const info = PITCHES[id];
+  if (!info) return id || "";
+  return currentFlute().names[info.covers];
+}
+
+function freqForCover(covers) {
+  return currentFlute().notes[covers];
+}
+
 const SONGS = [
   {
     id: "walk",
@@ -271,6 +317,7 @@ let audioCtx = null;
 let master = null;
 let droneGain = null;
 let droneOsc = null;
+let droneOver = null;
 let guideBus = null;
 let guideOn = true;
 let micOn = false;
@@ -352,17 +399,16 @@ function ensureAudio() {
   droneGain.connect(master);
   droneOsc = audioCtx.createOscillator();
   droneOsc.type = "triangle";
-  droneOsc.frequency.value = 440;
-  const over = audioCtx.createOscillator();
-  over.type = "sine";
-  over.frequency.value = 880;
+  droneOver = audioCtx.createOscillator();
+  droneOver.type = "sine";
+  tuneDroneVoice();
   const overGain = audioCtx.createGain();
   overGain.gain.value = 0.18;
   droneOsc.connect(droneGain);
-  over.connect(overGain);
+  droneOver.connect(overGain);
   overGain.connect(droneGain);
   droneOsc.start();
-  over.start();
+  droneOver.start();
   ensureTrackBus();
 }
 
@@ -400,6 +446,14 @@ function blip(freq, when, gain, dur, bus) {
   osc2.start(t);
   osc.stop(t + dur + 0.02);
   osc2.stop(t + dur + 0.02);
+}
+
+function tuneDroneVoice() {
+  if (!droneOsc || !audioCtx) return;
+  const hz = currentFlute().drone;
+  const t = audioCtx.currentTime;
+  droneOsc.frequency.setValueAtTime(hz, t);
+  if (droneOver) droneOver.frequency.setValueAtTime(hz * 2, t);
 }
 
 function setDrone(on) {
@@ -447,8 +501,8 @@ function playerDrone() {
 function youLine() {
   const covers = playerCovers();
   const drone = playerDrone();
-  const names = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
-  const note = micOn && micLabel ? micLabel : covers == null ? "" : names[covers];
+  const id = micOn && micLabel ? micLabel : covers == null ? "" : LANES[covers] || "";
+  const note = id ? shownNote(id) : "";
   if (micOn && !note && !drone) return "Listening";
   if (note && drone) return `${note} · drone`;
   if (drone) return "Drone";
@@ -543,7 +597,7 @@ function startSong(id) {
         t,
         d,
         lane: DRONE_LANE,
-        freq: 440,
+        freq: currentFlute().drone,
         covers: null,
         state: "pending",
         holdJudged: false,
@@ -558,7 +612,7 @@ function startSong(id) {
       t,
       d,
       lane: info.covers === 0 ? OPEN_LANE : info.covers - 1,
-      freq: info.freq,
+      freq: freqForCover(info.covers),
       covers: info.covers,
       state: "pending",
       holdJudged: false,
@@ -1137,15 +1191,6 @@ function draw(beat) {
 }
 
 
-const HEAR_NOTES = [
-  { name: "C5", covers: 5, hz: 523.25 },
-  { name: "D5", covers: 4, hz: 587.33 },
-  { name: "E5", covers: 3, hz: 659.25 },
-  { name: "F#5", covers: 2, hz: 739.99 },
-  { name: "G5", covers: 1, hz: 783.99 },
-  { name: "A5", covers: 0, hz: 880 },
-  { name: "A4", covers: 6, hz: 440 },
-];
 const TONE_PROM = 12;
 
 function toneAt(freq, sampleRate, fftSize, hz) {
@@ -1205,29 +1250,42 @@ function secondBarrel(freq, sampleRate, fftSize, low) {
 }
 
 function hearFlute(freq, sampleRate, fftSize) {
-  const tones = HEAR_NOTES.map((note) => {
-    const heard = toneAt(freq, sampleRate, fftSize, note.hz);
-    return { name: note.name, covers: note.covers, target: note.hz, db: heard.db, hz: heard.hz, prom: heard.prom };
+  const flute = currentFlute();
+  const tones = flute.names.map((name, covers) => {
+    const target = flute.notes[covers];
+    const heard = toneAt(freq, sampleRate, fftSize, target);
+    return { name, id: LANES[covers], covers, target, db: heard.db, hz: heard.hz, prom: heard.prom };
   });
-  const low = tones.find((tone) => tone.name === "A4");
+  const low = tones.find((tone) => tone.covers === 6);
   let pool = tones.filter((tone) => tone.prom >= TONE_PROM && Math.abs(tone.hz - tone.target) <= 22);
-  const a4 = pool.find((tone) => tone.name === "A4");
-  const a5 = pool.find((tone) => tone.name === "A5");
-  if (a4 && a5 && a5.db <= a4.db + 0.5) {
-    const third = toneAt(freq, sampleRate, fftSize, 1320);
-    const sixth = toneAt(freq, sampleRate, fftSize, 2640);
+  pool = pool.filter((tone) => {
+    return !pool.some(
+      (other) =>
+        other !== tone &&
+        Math.abs(other.hz - tone.hz) < 12 &&
+        Math.abs(other.hz - other.target) + 0.5 < Math.abs(tone.hz - tone.target),
+    );
+  });
+  const lowHit = pool.find((tone) => tone.covers === 6);
+  const openHit = pool.find((tone) => tone.covers === 0);
+  if (lowHit && openHit && openHit.db <= lowHit.db + 0.5) {
+    const third = toneAt(freq, sampleRate, fftSize, low.target * 3);
+    const sixth = toneAt(freq, sampleRate, fftSize, low.target * 6);
     const highConfirms = sixth.prom >= TONE_PROM && sixth.db > third.db;
-    if (!highConfirms) pool = pool.filter((tone) => tone.name !== "A5");
+    if (!highConfirms) pool = pool.filter((tone) => tone.covers !== 0);
   }
+  const upper = pool.filter((tone) => tone.covers !== 6);
   let melody = null;
-  for (const tone of pool) if (!melody || tone.db > melody.db) melody = tone;
-  const droneTone = low.prom >= TONE_PROM && Math.abs(low.hz - 440) <= 22;
+  const pick = upper.length ? upper : pool;
+  for (const tone of pick) if (!melody || tone.db > melody.db) melody = tone;
+  const droneTone = low.prom >= TONE_PROM && Math.abs(low.hz - flute.drone) <= 22;
   let drone = false;
   if (!melody && droneTone) melody = low;
-  if (melody && melody.name !== "A4") drone = droneTone;
-  else if (melody && melody.name === "A4") drone = secondBarrel(freq, sampleRate, fftSize, low);
+  if (melody && melody.covers !== 6) drone = droneTone;
+  else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
   const melodyDb = melody ? melody.db : -120;
   const droneDb = low.db;
+  const droneHz = Math.round(flute.drone);
   if (!melody) {
     return {
       covers: null,
@@ -1235,17 +1293,17 @@ function hearFlute(freq, sampleRate, fftSize) {
       label: "",
       melodyDb,
       droneDb,
-      detail: low.prom > 4 ? `No clear note · 440 Hz ${Math.round(low.db)} dB` : "No pitch",
+      detail: low.prom > 4 ? `No clear note · ${droneHz} Hz ${Math.round(low.db)} dB` : "No pitch",
     };
   }
   const droneWord = drone ? "drone on" : "drone off";
   return {
     covers: melody.covers,
     drone,
-    label: melody.name,
+    label: melody.id,
     melodyDb,
     droneDb,
-    detail: `${melody.name} ${Math.round(melody.db)} dB · 440 Hz ${Math.round(low.db)} dB, prominence ${Math.round(low.prom)} · ${droneWord}`,
+    detail: `${melody.name} ${Math.round(melody.db)} dB · ${droneHz} Hz ${Math.round(low.db)} dB, prominence ${Math.round(low.prom)} · ${droneWord}`,
   };
 }
 
@@ -1670,10 +1728,9 @@ function openFreeLive(at, det) {
 function detectedEvent() {
   const covers = playerCovers();
   const drone = Boolean(playerDrone());
-  const names = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
   let pitch = "";
   if (micOn && micLabel) pitch = micLabel;
-  else if (!micOn && covers != null) pitch = names[covers] || "";
+  else if (!micOn && covers != null) pitch = LANES[covers] || "";
   if (!pitch && !drone) return null;
   const info = pitch ? PITCHES[pitch] : null;
   return {
@@ -2071,10 +2128,9 @@ function barBeat(beat) {
 }
 
 function freeNoteLine() {
-  const names = ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"];
   const covers = playerCovers();
-  const pitch = micOn && micLabel ? micLabel : covers == null ? "" : names[covers] || "";
-  if (pitch) return { text: pitch, hot: true };
+  const id = micOn && micLabel ? micLabel : covers == null ? "" : LANES[covers] || "";
+  if (id) return { text: shownNote(id), hot: true };
   if (freeNotice && performance.now() < freeNoticeUntil && freeState === "live") return { text: freeNotice, warn: true };
   return { text: "" };
 }
@@ -2392,7 +2448,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (e.repeat) return;
     droneHeld = true;
-    if (audioCtx && !micOn) blip(440, undefined, 0.06, 0.14, master);
+    if (audioCtx && !micOn) blip(currentFlute().drone, undefined, 0.06, 0.14, master);
     return;
   }
   const cover = codeToCover(e.code);
@@ -2408,7 +2464,7 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (e.repeat) return;
   down.set(cover, performance.now());
-  if (audioCtx && !micOn) blip(LANES.map((id) => PITCHES[id]).find((p) => p.covers === cover).freq, undefined, 0.08, 0.16, master);
+  if (audioCtx && !micOn) blip(freqForCover(cover), undefined, 0.08, 0.16, master);
 });
 
 window.addEventListener("keyup", (e) => {
@@ -2634,7 +2690,7 @@ function paintMicTest() {
     return;
   }
   const level = Math.max(0, Math.min(1, micEnergy / 0.12));
-  $("mic-test-state").textContent = micLabel ? `On · ${micLabel}` : "On · quiet";
+  $("mic-test-state").textContent = micLabel ? `On · ${shownNote(micLabel)}` : "On · quiet";
   $("mic-test-note").textContent = micDetail || "Listening";
   $("mic-meter-bar").style.width = `${Math.round(level * 100)}%`;
 }
@@ -2769,6 +2825,88 @@ $("pick-flutes").addEventListener("click", () => showScreen("screen-flutes"));
 $("pick-free").addEventListener("click", () => startFree());
 $("select-back").addEventListener("click", () => showScreen("screen-map"));
 $("flutes-back").addEventListener("click", () => showScreen("screen-map"));
+
+function paintDronePill() {
+  const pill = $("drone-pill");
+  if (pill) pill.textContent = `Drone · ${currentFlute().name}`;
+}
+
+function selectFlute(id) {
+  if (!FLUTES[id] || id === fluteId) return;
+  fluteId = id;
+  try {
+    localStorage.setItem(FLUTE_KEY, id);
+  } catch {
+    /* the browser can refuse storage */
+  }
+  tuneDroneVoice();
+  applyFluteArt();
+  paintFluteScreen();
+}
+
+function applyFluteArt() {
+  const src = currentFlute().art;
+  for (const id of ["title-flute", "play-flute", "free-flute"]) {
+    const img = document.querySelector(`#${id} img`);
+    if (img && img.getAttribute("src") !== src) img.src = src;
+  }
+}
+
+function fluteFigure(name, src) {
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "";
+  const title = document.createElement("b");
+  title.textContent = name;
+  return { img, title };
+}
+
+function paintFluteScreen() {
+  const flute = currentFlute();
+  const hero = $("flute-in-hand");
+  const img = document.createElement("img");
+  img.src = flute.art;
+  img.alt = "";
+  const copy = document.createElement("div");
+  const eye = document.createElement("p");
+  eye.className = "eyebrow";
+  eye.textContent = "In hand";
+  const heading = document.createElement("h2");
+  heading.textContent = flute.title;
+  const line = document.createElement("p");
+  line.textContent = flute.line;
+  copy.append(eye, heading, line);
+  hero.replaceChildren(img, copy);
+
+  const caseEl = $("flute-case");
+  const picks = [];
+  for (const other of Object.values(FLUTES)) {
+    if (other.id === flute.id) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "flute-pick";
+    button.setAttribute("aria-label", `Choose ${other.name}`);
+    const figure = fluteFigure(other.name, other.art);
+    const state = document.createElement("span");
+    state.textContent = "Choose";
+    button.append(figure.img, figure.title, state);
+    button.addEventListener("click", () => selectFlute(other.id));
+    picks.push(button);
+  }
+  for (const shut of SHUT_FLUTES) {
+    const article = document.createElement("article");
+    const figure = fluteFigure(shut.name, "assets/flute.png");
+    const state = document.createElement("span");
+    state.textContent = "Shut";
+    article.append(figure.img, figure.title, state);
+    picks.push(article);
+  }
+  caseEl.replaceChildren(...picks);
+  paintDronePill();
+  applyFluteArt();
+}
+
+paintFluteScreen();
 $("open-title").addEventListener("click", () => {
   closeMenu();
   showScreen("screen-title");
