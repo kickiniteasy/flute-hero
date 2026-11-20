@@ -330,6 +330,8 @@ let micDroneDb = -120;
 let micError = "";
 let micEnergy = 0;
 let micHold = { key: "", n: 0 };
+let micDroneStreak = 0;
+let micDroneLatched = false;
 let micPermission = "unknown";
 let micPromise = null;
 let micStream = null;
@@ -1249,6 +1251,28 @@ function secondBarrel(freq, sampleRate, fftSize, low) {
   return extraPeak(freq, sampleRate, fftSize, low.hz, 30);
 }
 
+function apartFromScale(freq, sampleRate, fftSize, centerHz, targets) {
+  const binHz = sampleRate / fftSize;
+  const center = Math.round(centerHz / binHz);
+  const floors = [];
+  for (let i = center - 12; i <= center + 12; i++) {
+    if (i < 1 || i >= freq.length - 1 || Math.abs(i - center) <= 2) continue;
+    const hz = i * binHz;
+    if (targets.some((target) => Math.abs(hz - target) <= binHz * 2.4)) continue;
+    floors.push(freq[i]);
+  }
+  floors.sort((a, b) => a - b);
+  return floors.length ? floors[Math.floor(floors.length / 2)] : -120;
+}
+
+function dronePartial(tone, fundamental) {
+  if (!(fundamental > 0)) return false;
+  for (let k = 2; k <= 5; k++) {
+    if (Math.abs(tone.hz - fundamental * k) <= 18) return true;
+  }
+  return false;
+}
+
 function hearFlute(freq, sampleRate, fftSize) {
   const flute = currentFlute();
   const tones = flute.names.map((name, covers) => {
@@ -1274,14 +1298,21 @@ function hearFlute(freq, sampleRate, fftSize) {
     const highConfirms = sixth.prom >= TONE_PROM && sixth.db > third.db;
     if (!highConfirms) pool = pool.filter((tone) => tone.covers !== 0);
   }
-  const upper = pool.filter((tone) => tone.covers !== 6);
+  const others = flute.notes.filter((_, covers) => covers !== 6);
+  const droneFloor = apartFromScale(freq, sampleRate, fftSize, low.hz, others);
+  const droneProm = low.db - droneFloor;
+  const droneNear = Math.abs(low.hz - flute.drone) <= 22 && droneProm >= 7;
+  let upper = pool.filter((tone) => tone.covers !== 6);
+  if (droneNear) {
+    const voiced = upper.filter((tone) => !dronePartial(tone, low.hz) || tone.db >= low.db + 3);
+    if (voiced.length) upper = voiced;
+  }
   let melody = null;
   const pick = upper.length ? upper : pool;
   for (const tone of pick) if (!melody || tone.db > melody.db) melody = tone;
-  const droneTone = low.prom >= TONE_PROM && Math.abs(low.hz - flute.drone) <= 22;
   let drone = false;
-  if (!melody && droneTone) melody = low;
-  if (melody && melody.covers !== 6) drone = droneTone;
+  if (!melody && droneNear) melody = low;
+  if (melody && melody.covers !== 6) drone = droneNear && low.db >= melody.db - 22;
   else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
   const melodyDb = melody ? melody.db : -120;
   const droneDb = low.db;
@@ -1303,7 +1334,7 @@ function hearFlute(freq, sampleRate, fftSize) {
     label: melody.id,
     melodyDb,
     droneDb,
-    detail: `${melody.name} ${Math.round(melody.db)} dB · ${droneHz} Hz ${Math.round(low.db)} dB, prominence ${Math.round(low.prom)} · ${droneWord}`,
+    detail: `${melody.name} ${Math.round(melody.db)} dB · ${droneHz} Hz ${Math.round(low.db)} dB, prominence ${Math.round(droneProm)} · ${droneWord}`,
   };
 }
 
@@ -1327,6 +1358,8 @@ function stopMic() {
   micError = "";
   micPromise = null;
   micHold = { key: "", n: 0 };
+  micDroneStreak = 0;
+  micDroneLatched = false;
   micStream?.getTracks().forEach((t) => t.stop());
   micStream = null;
   setMicButton(false);
@@ -1385,23 +1418,34 @@ function toggleMic() {
   else startMic(true);
 }
 
+function settleDrone(on) {
+  if (on) micDroneStreak = micDroneStreak > 0 ? micDroneStreak + 1 : 1;
+  else micDroneStreak = micDroneStreak < 0 ? micDroneStreak - 1 : -1;
+  if (micDroneStreak >= 2) micDroneLatched = true;
+  if (micDroneStreak <= -5) micDroneLatched = false;
+  return micDroneLatched;
+}
+
 function commitHeard(heard) {
   micDetail = heard.detail;
   micMelodyDb = heard.melodyDb;
   micDroneDb = heard.droneDb;
-  const key = `${heard.covers ?? "-"}:${heard.drone ? 1 : 0}:${heard.label}`;
   if (heard.covers == null && !heard.drone) {
-    micHold = { key, n: 0 };
+    micHold = { key: "", n: 0 };
     micCovers = null;
     micDrone = false;
     micLabel = "";
+    micDroneStreak = 0;
+    micDroneLatched = false;
     return;
   }
+  const key = `${heard.covers ?? "-"}:${heard.label}`;
   micHold = key === micHold.key ? { key, n: micHold.n + 1 } : { key, n: 1 };
-  if (micHold.n < 3) return;
-  micCovers = heard.covers;
-  micDrone = heard.drone;
-  micLabel = heard.label;
+  if (micHold.n >= 3) {
+    micCovers = heard.covers;
+    micLabel = heard.label;
+  }
+  micDrone = settleDrone(heard.drone);
 }
 
 function openMic(stream) {
@@ -1417,6 +1461,8 @@ function openMic(stream) {
   micOn = true;
   micError = "";
   micHold = { key: "", n: 0 };
+  micDroneStreak = 0;
+  micDroneLatched = false;
   setMicButton(true);
   const listen = () => {
     if (!micOn) return;
