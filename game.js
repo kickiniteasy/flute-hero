@@ -351,48 +351,6 @@ function lanePlayed(lane, covers, drone) {
   return lane < covers;
 }
 
-function dueChart(beat) {
-  let melody = null;
-  let drone = false;
-  for (const note of chart) {
-    const judging =
-      note.state === "hit"
-        ? beat <= note.t + note.d
-        : note.state === "pending" && beat >= note.t - WIN && beat <= note.t + WIN;
-    if (!judging) continue;
-    if (note.kind === "drone") drone = true;
-    else melody = note;
-  }
-  return { melody, drone };
-}
-
-function laneVerdict(lane, beat) {
-  const covers = playerCovers();
-  const drone = playerDrone();
-  const on = lanePlayed(lane, covers, drone);
-  const due = dueChart(beat);
-  if (lane === DRONE_LANE) {
-    if (due.drone && drone) return "right";
-    if (!due.drone && drone && due.melody) return "wrong";
-    return on ? "you" : "idle";
-  }
-  if (!due.melody) return on ? "you" : "idle";
-  if (covers === due.melody.covers && on) return "right";
-  if (on) return "wrong";
-  return "idle";
-}
-
-function youVerdict(beat) {
-  const due = dueChart(beat);
-  const covers = playerCovers();
-  const drone = playerDrone();
-  if (covers == null && !drone) return "";
-  if (!due.melody && !due.drone) return "you";
-  const melodyOk = !due.melody || covers === due.melody.covers;
-  const droneOk = due.drone ? drone : !drone;
-  return melodyOk && droneOk ? "right" : "wrong";
-}
-
 function expectation(beat) {
   let melody = null;
   let drone = false;
@@ -411,7 +369,18 @@ function laneMark(lane, covers, drone, expect) {
   if (!expect.active) return "you";
   if (lane === DRONE_LANE) return expect.drone ? "right" : "wrong";
   if (!expect.melody) return "you";
-  return lanePlayed(lane, expect.melody.covers, false) ? "right" : "wrong";
+  return covers === expect.melody.covers ? "right" : "wrong";
+}
+
+function youVerdict(beat) {
+  const covers = playerCovers();
+  const drone = playerDrone();
+  if (covers == null && !drone) return "";
+  const expect = expectation(beat);
+  if (!expect.active) return "you";
+  const melodyOk = !expect.melody || covers === expect.melody.covers;
+  const droneOk = expect.drone ? drone : !drone;
+  return melodyOk && droneOk ? "right" : "wrong";
 }
 
 function flashLanes(lanes) {
