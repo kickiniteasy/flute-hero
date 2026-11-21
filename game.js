@@ -1300,7 +1300,7 @@ function draw(beat) {
 
 
 const TONE_PROM = 12;
-const PEAKS2_PROM = 6;
+const PEAKS2_PROM = 3;
 
 function toneAt(freq, sampleRate, fftSize, hz) {
   const binHz = sampleRate / fftSize;
@@ -1359,7 +1359,34 @@ function secondBarrel(freq, sampleRate, fftSize, low) {
 }
 
 function nearTarget(tone) {
-  return Math.abs(tone.hz - tone.target) <= Math.max(28, tone.target * 0.04);
+  return Math.abs(tone.hz - tone.target) <= Math.max(36, tone.target * 0.05);
+}
+
+function fatTone(freq, sampleRate, fftSize, hz) {
+  const binHz = sampleRate / fftSize;
+  const center = hz / binHz;
+  const i0 = Math.max(1, Math.floor(center) - 3);
+  const i1 = Math.min(freq.length - 2, Math.ceil(center) + 3);
+  let peak = -120;
+  let bin = i0;
+  for (let i = i0; i <= i1; i++) {
+    if (freq[i] > peak) {
+      peak = freq[i];
+      bin = i;
+    }
+  }
+  const left = freq[bin - 1];
+  const right = freq[bin + 1];
+  const denom = left - 2 * peak + right;
+  const delta = denom === 0 ? 0 : (0.5 * (left - right)) / denom;
+  const floors = [];
+  for (let i = bin - 16; i <= bin + 16; i++) {
+    if (i < 1 || i >= freq.length || Math.abs(i - bin) <= 7) continue;
+    floors.push(freq[i]);
+  }
+  floors.sort((a, b) => a - b);
+  const floor = floors.length ? floors[Math.floor(floors.length / 2)] : -120;
+  return { db: peak, hz: (bin + delta) * binHz, prom: peak - floor };
 }
 
 function seriesScore(freq, sampleRate, fftSize, fundamental) {
@@ -1370,7 +1397,7 @@ function seriesScore(freq, sampleRate, fftSize, fundamental) {
   let hz = fundamental;
   for (let k = 0; k < weights.length; k++) {
     const hzK = fundamental * (k + 1);
-    const hit = toneAt(freq, sampleRate, fftSize, hzK);
+    const hit = k === 0 ? fatTone(freq, sampleRate, fftSize, hzK) : toneAt(freq, sampleRate, fftSize, hzK);
     const near = Math.abs(hit.hz - hzK) <= Math.max(28, hzK * 0.04);
     if (k === 0) {
       db = hit.db;
@@ -1412,15 +1439,18 @@ function pickMelody(freq, sampleRate, fftSize) {
   });
   const low = tones.find((tone) => tone.covers === 6);
   const upper = tones
-    .filter((tone) => tone.covers !== 6 && tone.prom >= PEAKS2_PROM && nearTarget(tone))
-    .sort((a, b) => b.score - a.score || b.db - a.db);
+    .filter((tone) => tone.covers !== 6 && tone.db > -64 && tone.prom >= PEAKS2_PROM && nearTarget(tone))
+    .sort((a, b) => b.db - a.db || b.score - a.score);
   let melody = upper[0] || null;
-  const lowNear = low.prom >= PEAKS2_PROM && nearTarget(low);
+  const lowNear = low.db > -64 && low.prom >= PEAKS2_PROM && nearTarget(low);
   if (melody && melody.covers === 0 && lowNear && melody.db <= low.db + 3) {
     const third = toneAt(freq, sampleRate, fftSize, low.target * 3);
     const sixth = toneAt(freq, sampleRate, fftSize, low.target * 6);
     const openConfirms = sixth.prom >= PEAKS2_PROM && sixth.db > third.db + 1;
-    if (!openConfirms) melody = upper[1] && upper[1].prom >= PEAKS2_PROM ? upper[1] : null;
+    if (!openConfirms) {
+      const next = upper[1];
+      if (next && next.db > melody.db - 6) melody = next;
+    }
   }
   if (!melody && lowNear) melody = low;
   const beside = melody && melody.covers !== 6 ? melody.target : 0;
@@ -1820,24 +1850,26 @@ function commitHeard(heard) {
 
 function commitPeaks2(heard) {
   micDetail = heard.detail;
-  micMelodyDb = heard.melodyDb;
   micDroneDb = heard.droneDb;
   const silent = heard.covers == null && !heard.drone;
   if (silent) {
     micQuiet += 1;
-    if (micQuiet < 5) return;
+    if (micQuiet < 8) return;
     resetEarHold();
     micCovers = null;
     micDrone = false;
     micLabel = "";
+    micMelodyDb = -120;
     return;
   }
   micQuiet = 0;
   const key = `${heard.covers ?? "-"}:${heard.label}`;
   micHold = key === micHold.key ? { key, n: micHold.n + 1 } : { key, n: 1 };
-  if (micHold.n >= 2) {
+  const switching = Boolean(micLabel) && (heard.label !== micLabel || heard.covers !== micCovers);
+  if (!switching || micHold.n >= 3 || heard.melodyDb >= micMelodyDb + 4) {
     micCovers = heard.covers;
     micLabel = heard.label || "";
+    micMelodyDb = heard.melodyDb;
   }
   micDrone = settleDrone(heard.drone);
 }
