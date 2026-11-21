@@ -330,6 +330,7 @@ let micDroneDb = -120;
 let micError = "";
 let micEnergy = 0;
 let micHold = { key: "", n: 0 };
+let micQuiet = 0;
 let micDroneStreak = 0;
 let micDroneLatched = false;
 let micAnalyser = null;
@@ -337,6 +338,7 @@ const EAR_KEY = "flute-hero-ear";
 const EARS = {
   bands: { id: "bands", name: "Bands", menu: "A window around each note." },
   peaks: { id: "peaks", name: "Peaks", menu: "The drone only when a second barrel is there." },
+  peaks2: { id: "peaks2", name: "Peaks v2", menu: "A held note stays. The drone is decided beside it." },
   held: { id: "held", name: "Held", menu: "The drone stays with the note." },
 };
 let earId = localStorage.getItem(EAR_KEY);
@@ -1298,6 +1300,7 @@ function draw(beat) {
 
 
 const TONE_PROM = 12;
+const PEAKS2_PROM = 6;
 
 function toneAt(freq, sampleRate, fftSize, hz) {
   const binHz = sampleRate / fftSize;
@@ -1353,6 +1356,104 @@ function secondBarrel(freq, sampleRate, fftSize, low) {
     if (extraPeak(freq, sampleRate, fftSize, low.hz * k, 14 * k)) return true;
   }
   return extraPeak(freq, sampleRate, fftSize, low.hz, 30);
+}
+
+function nearTarget(tone) {
+  return Math.abs(tone.hz - tone.target) <= Math.max(28, tone.target * 0.04);
+}
+
+function seriesScore(freq, sampleRate, fftSize, fundamental) {
+  const weights = [1, 0.6, 0.35];
+  let score = 0;
+  let db = -120;
+  let prom = 0;
+  let hz = fundamental;
+  for (let k = 0; k < weights.length; k++) {
+    const hzK = fundamental * (k + 1);
+    const hit = toneAt(freq, sampleRate, fftSize, hzK);
+    const near = Math.abs(hit.hz - hzK) <= Math.max(28, hzK * 0.04);
+    if (k === 0) {
+      db = hit.db;
+      prom = hit.prom;
+      hz = hit.hz;
+      if (!near) break;
+    }
+    if (near) score += Math.max(0, hit.prom) * weights[k];
+  }
+  return { score, db, prom, hz };
+}
+
+function droneStands(freq, sampleRate, fftSize, droneHz, melodyHz) {
+  const hit = toneAt(freq, sampleRate, fftSize, droneHz);
+  const binHz = sampleRate / fftSize;
+  const center = Math.round(hit.hz / binHz);
+  const floors = [];
+  for (let i = center - 10; i <= center + 10; i++) {
+    if (i < 1 || i >= freq.length - 1 || Math.abs(i - center) <= 2) continue;
+    const hz = i * binHz;
+    if (melodyHz && Math.abs(hz - melodyHz) <= Math.max(24, melodyHz * 0.06)) continue;
+    floors.push(freq[i]);
+  }
+  floors.sort((a, b) => a - b);
+  const floor = floors.length ? floors[Math.floor(floors.length / 2)] : -120;
+  return {
+    db: hit.db,
+    hz: hit.hz,
+    prom: hit.db - floor,
+    near: Math.abs(hit.hz - droneHz) <= Math.max(28, droneHz * 0.04),
+  };
+}
+
+function pickMelody(freq, sampleRate, fftSize) {
+  const flute = currentFlute();
+  const tones = flute.notes.map((target, covers) => {
+    const series = seriesScore(freq, sampleRate, fftSize, target);
+    return { name: flute.names[covers], id: LANES[covers], covers, target, ...series };
+  });
+  const low = tones.find((tone) => tone.covers === 6);
+  const upper = tones
+    .filter((tone) => tone.covers !== 6 && tone.prom >= PEAKS2_PROM && nearTarget(tone))
+    .sort((a, b) => b.score - a.score || b.db - a.db);
+  let melody = upper[0] || null;
+  const lowNear = low.prom >= PEAKS2_PROM && nearTarget(low);
+  if (melody && melody.covers === 0 && lowNear && melody.db <= low.db + 3) {
+    const third = toneAt(freq, sampleRate, fftSize, low.target * 3);
+    const sixth = toneAt(freq, sampleRate, fftSize, low.target * 6);
+    const openConfirms = sixth.prom >= PEAKS2_PROM && sixth.db > third.db + 1;
+    if (!openConfirms) melody = upper[1] && upper[1].prom >= PEAKS2_PROM ? upper[1] : null;
+  }
+  if (!melody && lowNear) melody = low;
+  const beside = melody && melody.covers !== 6 ? melody.target : 0;
+  const droneHit = droneStands(freq, sampleRate, fftSize, flute.drone, beside);
+  const droneNear = droneHit.prom >= PEAKS2_PROM && droneHit.near;
+  let drone = false;
+  if (melody && melody.covers !== 6) drone = droneNear && droneHit.db >= melody.db - 20;
+  else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
+  return { melody, drone, low, flute };
+}
+
+function heardMelody(freq, sampleRate, fftSize) {
+  const { melody, drone, low, flute } = pickMelody(freq, sampleRate, fftSize);
+  const melodyDb = melody ? melody.db : -120;
+  const droneHz = Math.round(flute.drone);
+  if (!melody) {
+    return {
+      covers: null,
+      drone: false,
+      label: "",
+      melodyDb,
+      droneDb: low.db,
+      detail: low.prom > 4 ? `No clear note · ${droneHz} Hz ${Math.round(low.db)} dB` : "No pitch",
+    };
+  }
+  return {
+    covers: melody.covers,
+    drone,
+    label: melody.id,
+    melodyDb,
+    droneDb: low.db,
+    detail: `${melody.name} ${Math.round(melody.db)} dB · ${droneHz} Hz ${Math.round(low.db)} dB, prominence ${Math.round(low.prom)} · ${drone ? "drone on" : "drone off"}`,
+  };
 }
 
 function bandWindows(flute) {
@@ -1570,9 +1671,14 @@ function hearPeaks(freq, sampleRate, fftSize) {
   };
 }
 
+function hearPeaks2(freq, sampleRate, fftSize) {
+  return heardMelody(freq, sampleRate, fftSize);
+}
+
 function hearFlute(freq, sampleRate, fftSize) {
   if (earId === "bands") return hearBands(freq, sampleRate, fftSize);
   if (earId === "held") return hearHeld(freq, sampleRate, fftSize);
+  if (earId === "peaks2") return hearPeaks2(freq, sampleRate, fftSize);
   return hearPeaks(freq, sampleRate, fftSize);
 }
 
@@ -1596,6 +1702,7 @@ function stopMic() {
   micError = "";
   micPromise = null;
   micHold = { key: "", n: 0 };
+  micQuiet = 0;
   micDroneStreak = 0;
   micDroneLatched = false;
   micAnalyser = null;
@@ -1661,17 +1768,22 @@ function settleDrone(on) {
   if (on) micDroneStreak = micDroneStreak > 0 ? micDroneStreak + 1 : 1;
   else micDroneStreak = micDroneStreak < 0 ? micDroneStreak - 1 : -1;
   if (micDroneStreak >= 2) micDroneLatched = true;
-  if (micDroneStreak <= -5) micDroneLatched = false;
+  if (micDroneStreak <= (earId === "peaks2" ? -3 : -5)) micDroneLatched = false;
   return micDroneLatched;
 }
 
 function resetEarHold() {
   micHold = { key: "", n: 0 };
+  micQuiet = 0;
   micDroneStreak = 0;
   micDroneLatched = false;
 }
 
 function commitHeard(heard) {
+  if (earId === "peaks2") {
+    commitPeaks2(heard);
+    return;
+  }
   micDetail = heard.detail;
   micMelodyDb = heard.melodyDb;
   micDroneDb = heard.droneDb;
@@ -1706,6 +1818,30 @@ function commitHeard(heard) {
   micLabel = heard.label;
 }
 
+function commitPeaks2(heard) {
+  micDetail = heard.detail;
+  micMelodyDb = heard.melodyDb;
+  micDroneDb = heard.droneDb;
+  const silent = heard.covers == null && !heard.drone;
+  if (silent) {
+    micQuiet += 1;
+    if (micQuiet < 5) return;
+    resetEarHold();
+    micCovers = null;
+    micDrone = false;
+    micLabel = "";
+    return;
+  }
+  micQuiet = 0;
+  const key = `${heard.covers ?? "-"}:${heard.label}`;
+  micHold = key === micHold.key ? { key, n: micHold.n + 1 } : { key, n: 1 };
+  if (micHold.n >= 2) {
+    micCovers = heard.covers;
+    micLabel = heard.label || "";
+  }
+  micDrone = settleDrone(heard.drone);
+}
+
 function openMic(stream) {
   const source = audioCtx.createMediaStreamSource(stream);
   const analyser = audioCtx.createAnalyser();
@@ -1713,13 +1849,14 @@ function openMic(stream) {
   analyser.fftSize = 4096;
   analyser.minDecibels = -110;
   analyser.maxDecibels = 0;
-  analyser.smoothingTimeConstant = earId === "bands" ? 0.45 : 0.25;
+  analyser.smoothingTimeConstant = earId === "bands" || earId === "peaks2" ? 0.45 : 0.25;
   source.connect(analyser);
   const time = new Float32Array(analyser.fftSize);
   const freq = new Float32Array(analyser.frequencyBinCount);
   micOn = true;
   micError = "";
   micHold = { key: "", n: 0 };
+  micQuiet = 0;
   setMicButton(true);
   const listen = () => {
     if (!micOn) return;
@@ -2036,8 +2173,9 @@ function detectedEvent() {
   else if (!micOn && covers != null) pitch = LANES[covers] || "";
   if (!pitch && !drone) return null;
   const info = pitch ? PITCHES[pitch] : null;
+  const key = earId === "peaks2" ? pitch || "drone" : `${pitch}|${drone ? 1 : 0}`;
   return {
-    key: `${pitch}|${drone ? 1 : 0}`,
+    key,
     pitch,
     covers: info ? info.covers : null,
     drone,
@@ -2051,8 +2189,14 @@ function followFlute(beat) {
   if (!freeHold || freeHold.key !== key) freeHold = { key, at: audioCtx.currentTime, det };
   const liveKey = freeLive ? freeLive.key : "";
   if (key === liveKey) {
-    if (freeLive) freeLive.d = beat - freeLive.t;
-  } else if (audioCtx.currentTime - freeHold.at >= 0.07) {
+    if (!freeLive) return;
+    if (earId === "peaks2" && Boolean(freeLive.drone) !== Boolean(det && det.drone)) {
+      closeFreeLive(beat);
+      if (det) openFreeLive(beat, det);
+    } else freeLive.d = beat - freeLive.t;
+    return;
+  }
+  if (audioCtx.currentTime - freeHold.at >= 0.07) {
     const at = beat - (0.07 * freeBpm) / 60;
     closeFreeLive(freeLive ? Math.max(freeLive.t, at) : at);
     if (freeHold.det) openFreeLive(at, freeHold.det);
@@ -3062,7 +3206,7 @@ function setEar(id) {
   micCovers = null;
   micDrone = false;
   micLabel = "";
-  if (micAnalyser) micAnalyser.smoothingTimeConstant = id === "bands" ? 0.45 : 0.25;
+  if (micAnalyser) micAnalyser.smoothingTimeConstant = earId === "bands" || earId === "peaks2" ? 0.45 : 0.25;
   paintEar();
 }
 
