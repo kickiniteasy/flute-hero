@@ -329,6 +329,7 @@ let micMelodyDb = -120;
 let micDroneDb = -120;
 let micError = "";
 let micEnergy = 0;
+let micHz = 0;
 let micHold = { key: "", n: 0 };
 let micQuiet = 0;
 let micDroneStreak = 0;
@@ -340,7 +341,17 @@ const EARS = {
   peaks: { id: "peaks", name: "Peaks", menu: "The drone only when a second barrel is there." },
   peaks2: { id: "peaks2", name: "Peaks v2", menu: "A held note stays. The drone is decided beside it." },
   held: { id: "held", name: "Held", menu: "The drone stays with the note." },
+  yin: { id: "yin", name: "YIN", menu: "One pitch from the wave, the way a tuner library does." },
+  mcleod: { id: "mcleod", name: "McLeod", menu: "One pitch from the wave, the way Aubio does." },
 };
+function earFollowsPitch() {
+  return earId === "peaks2" || earId === "yin" || earId === "mcleod";
+}
+function earSmoothing() {
+  if (earId === "yin" || earId === "mcleod") return 0;
+  if (earId === "bands" || earId === "peaks2") return 0.45;
+  return 0.25;
+}
 let earId = localStorage.getItem(EAR_KEY);
 if (!EARS[earId]) earId = "peaks";
 let micPermission = "unknown";
@@ -882,26 +893,67 @@ function advanceTutorial() {
   paintTutorial();
 }
 
+function paintTuner(cents, idle) {
+  const tuner = $("tutorial-tuner");
+  const way = $("tutorial-way");
+  const num = $("tutorial-cents");
+  const needle = $("tutorial-needle");
+  tuner.classList.remove("in", "low", "high", "idle");
+  if (cents == null) {
+    way.textContent = idle;
+    num.textContent = "";
+    needle.style.left = "50%";
+    tuner.classList.add("idle");
+    return;
+  }
+  const rounded = Math.round(cents);
+  const peg = Math.max(-50, Math.min(50, rounded));
+  needle.style.left = `${50 + peg}%`;
+  if (Math.abs(rounded) <= 15) {
+    way.textContent = "In tune";
+    num.textContent = "On the note";
+    tuner.classList.add("in");
+    return;
+  }
+  if (rounded < 0) {
+    way.textContent = "Low";
+    num.textContent = `${Math.abs(rounded)} cents low`;
+    tuner.classList.add("low");
+    return;
+  }
+  way.textContent = "High";
+  num.textContent = `${rounded} cents high`;
+  tuner.classList.add("high");
+}
+
 function tutorialFrame() {
   if (!tutorialOn) return;
   const lesson = LESSONS[tutorialStep];
   const covers = playerCovers();
   const drone = playerDrone();
   const heard = $("tutorial-heard");
+  const tuner = $("tutorial-tuner");
   paintFlute($("tutorial-flute"), covers, tutorialPhase === "lesson" ? lesson.covers : null, drone);
   if (tutorialPhase === "done") {
+    tuner.classList.add("hidden");
+    heard.classList.remove("hidden");
     heard.textContent = youLine();
     heard.classList.remove("right");
-  } else if (covers === lesson.covers) {
-    tutorialHold += 1;
-    heard.textContent = "Yes";
-    heard.classList.add("right");
-    if (tutorialHold >= 8 && !tutorialAdvanceAt) tutorialAdvanceAt = performance.now() + 520;
   } else {
-    tutorialHold = 0;
-    tutorialAdvanceAt = 0;
-    heard.classList.remove("right");
-    heard.textContent = covers == null && !drone ? (micOn ? "Listening" : "Play this fingering") : youLine();
+    tuner.classList.remove("hidden");
+    heard.classList.add("hidden");
+    const targetHz = currentFlute().notes[lesson.covers];
+    let cents = null;
+    if (micOn && micHz > 0) cents = 1200 * Math.log2(micHz / targetHz);
+    else if (!micOn && covers != null) cents = 1200 * Math.log2(currentFlute().notes[covers] / targetHz);
+    paintTuner(cents, micOn ? "Listening" : "Play");
+    if (cents != null && Math.abs(cents) <= 15) {
+      tutorialHold += 1;
+      if (tutorialHold >= 8 && !tutorialAdvanceAt) tutorialAdvanceAt = performance.now() + 520;
+    } else {
+      tutorialHold = 0;
+      tutorialAdvanceAt = 0;
+    }
   }
   if (tutorialAdvanceAt && performance.now() >= tutorialAdvanceAt) advanceTutorial();
   tutorialRaf = requestAnimationFrame(tutorialFrame);
@@ -918,8 +970,9 @@ function startTutorial() {
   tutorialAdvanceAt = 0;
   showScreen("screen-tutorial");
   paintTutorial();
-  $("tutorial-heard").textContent = micOn ? "Listening" : "Play this fingering";
-  $("tutorial-heard").classList.remove("right");
+  $("tutorial-heard").classList.add("hidden");
+  $("tutorial-tuner").classList.remove("hidden");
+  paintTuner(null, micOn ? "Listening" : "Play");
   cancelAnimationFrame(tutorialRaf);
   tutorialRaf = requestAnimationFrame(tutorialFrame);
 }
@@ -1705,10 +1758,140 @@ function hearPeaks2(freq, sampleRate, fftSize) {
   return heardMelody(freq, sampleRate, fftSize);
 }
 
-function hearFlute(freq, sampleRate, fftSize) {
+const WAVE_TAU = 256;
+const waveDiff = new Float32Array(WAVE_TAU + 1);
+const waveCmnd = new Float32Array(WAVE_TAU + 1);
+
+function periodAt(arr, tau, tauMax) {
+  const left = tau > 0 ? arr[tau - 1] : arr[tau];
+  const mid = arr[tau];
+  const right = tau < tauMax ? arr[tau + 1] : arr[tau];
+  const denom = left - 2 * mid + right;
+  if (denom === 0) return tau;
+  const next = tau + (0.5 * (left - right)) / denom;
+  return next > 1 ? next : tau;
+}
+
+function waveBounds(sampleRate, length) {
+  const tauMin = Math.max(2, Math.floor(sampleRate / 1400));
+  const tauMax = Math.min(WAVE_TAU, Math.floor(length / 2) - 1, Math.floor(sampleRate / 250));
+  return { tauMin, tauMax, span: Math.floor(length / 2) };
+}
+
+function yinPitch(samples, sampleRate) {
+  const { tauMin, tauMax, span } = waveBounds(sampleRate, samples.length);
+  if (tauMax <= tauMin) return 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let sum = 0;
+    for (let j = 0; j < span; j++) {
+      const delta = samples[j] - samples[j + tau];
+      sum += delta * delta;
+    }
+    waveDiff[tau] = sum;
+  }
+  waveCmnd[0] = 1;
+  let running = 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    running += waveDiff[tau];
+    waveCmnd[tau] = running === 0 ? 1 : (waveDiff[tau] * tau) / running;
+  }
+  let tau = -1;
+  for (let t = tauMin; t <= tauMax; t++) {
+    if (waveCmnd[t] < 0.15) {
+      while (t + 1 <= tauMax && waveCmnd[t + 1] < waveCmnd[t]) t += 1;
+      tau = t;
+      break;
+    }
+  }
+  if (tau < 0) {
+    let best = tauMin;
+    let bestV = waveCmnd[tauMin];
+    for (let t = tauMin + 1; t <= tauMax; t++) {
+      if (waveCmnd[t] < bestV) {
+        bestV = waveCmnd[t];
+        best = t;
+      }
+    }
+    if (bestV > 0.45) return 0;
+    tau = best;
+  }
+  return sampleRate / periodAt(waveCmnd, tau, tauMax);
+}
+
+function mcleodPitch(samples, sampleRate) {
+  const { tauMin, tauMax, span } = waveBounds(sampleRate, samples.length);
+  if (tauMax <= tauMin) return 0;
+  let best = 0;
+  for (let tau = tauMin; tau <= tauMax; tau++) {
+    let ac = 0;
+    let norm = 0;
+    for (let j = 0; j < span; j++) {
+      const left = samples[j];
+      const right = samples[j + tau];
+      ac += left * right;
+      norm += left * left + right * right;
+    }
+    const value = norm > 0 ? (2 * ac) / norm : 0;
+    waveDiff[tau] = value;
+    if (value > best) best = value;
+  }
+  if (best < 0.6) return 0;
+  const cutoff = best * 0.93;
+  let tau = -1;
+  for (let t = tauMin + 1; t < tauMax; t++) {
+    if (waveDiff[t] >= waveDiff[t - 1] && waveDiff[t] >= waveDiff[t + 1] && waveDiff[t] >= cutoff) {
+      tau = t;
+      break;
+    }
+  }
+  if (tau < 0) return 0;
+  return sampleRate / periodAt(waveDiff, tau, tauMax);
+}
+
+function hearWave(hz, freq, sampleRate, fftSize) {
+  if (!(hz > 0)) {
+    return { covers: null, drone: false, label: "", melodyDb: -120, droneDb: -120, detail: "No pitch" };
+  }
+  const flute = currentFlute();
+  let covers = 0;
+  let off = Infinity;
+  for (let i = 0; i < flute.notes.length; i++) {
+    const cents = Math.abs(1200 * Math.log2(hz / flute.notes[i]));
+    if (cents < off) {
+      off = cents;
+      covers = i;
+    }
+  }
+  if (off > 50) {
+    return { covers: null, drone: false, label: "", melodyDb: -120, droneDb: -120, detail: `${Math.round(hz)} Hz` };
+  }
+  const target = flute.notes[covers];
+  const tone = fatTone(freq, sampleRate, fftSize, target);
+  let drone = false;
+  let droneDb = -120;
+  if (covers === 6) {
+    drone = secondBarrel(freq, sampleRate, fftSize, { target, db: tone.db, prom: tone.prom, hz: tone.hz });
+    droneDb = tone.db;
+  } else {
+    const stood = droneStands(freq, sampleRate, fftSize, flute.drone, target);
+    droneDb = stood.db;
+    drone = stood.prom >= 3 && stood.near && stood.db > -64 && stood.db >= tone.db - 20;
+  }
+  return {
+    covers,
+    drone,
+    label: LANES[covers],
+    melodyDb: tone.db,
+    droneDb,
+    detail: `${flute.names[covers]} ${Math.round(hz)} Hz`,
+  };
+}
+
+function hearFlute(freq, sampleRate, fftSize, waveHz) {
   if (earId === "bands") return hearBands(freq, sampleRate, fftSize);
   if (earId === "held") return hearHeld(freq, sampleRate, fftSize);
   if (earId === "peaks2") return hearPeaks2(freq, sampleRate, fftSize);
+  if (earId === "yin" || earId === "mcleod") return hearWave(waveHz, freq, sampleRate, fftSize);
   return hearPeaks(freq, sampleRate, fftSize);
 }
 
@@ -1729,6 +1912,7 @@ function stopMic() {
   micMelodyDb = -120;
   micDroneDb = -120;
   micEnergy = 0;
+  micHz = 0;
   micError = "";
   micPromise = null;
   micHold = { key: "", n: 0 };
@@ -1798,7 +1982,7 @@ function settleDrone(on) {
   if (on) micDroneStreak = micDroneStreak > 0 ? micDroneStreak + 1 : 1;
   else micDroneStreak = micDroneStreak < 0 ? micDroneStreak - 1 : -1;
   if (micDroneStreak >= 2) micDroneLatched = true;
-  if (micDroneStreak <= (earId === "peaks2" ? -3 : -5)) micDroneLatched = false;
+  if (micDroneStreak <= (earFollowsPitch() ? -3 : -5)) micDroneLatched = false;
   return micDroneLatched;
 }
 
@@ -1810,7 +1994,7 @@ function resetEarHold() {
 }
 
 function commitHeard(heard) {
-  if (earId === "peaks2") {
+  if (earFollowsPitch()) {
     commitPeaks2(heard);
     return;
   }
@@ -1881,7 +2065,7 @@ function openMic(stream) {
   analyser.fftSize = 4096;
   analyser.minDecibels = -110;
   analyser.maxDecibels = 0;
-  analyser.smoothingTimeConstant = earId === "bands" || earId === "peaks2" ? 0.45 : 0.25;
+  analyser.smoothingTimeConstant = earSmoothing();
   source.connect(analyser);
   const time = new Float32Array(analyser.fftSize);
   const freq = new Float32Array(analyser.frequencyBinCount);
@@ -1898,10 +2082,19 @@ function openMic(stream) {
     energy = Math.sqrt(energy / (time.length / 8));
     micEnergy = energy;
     if (energy < 0.015) {
+      micHz = 0;
       commitHeard({ covers: null, drone: false, label: "", melodyDb: -120, droneDb: -120, detail: "Quiet" });
     } else {
       analyser.getFloatFrequencyData(freq);
-      commitHeard(hearFlute(freq, audioCtx.sampleRate, analyser.fftSize));
+      const sampleRate = audioCtx.sampleRate;
+      const wantWave = tutorialOn || earId === "yin" || earId === "mcleod";
+      const waveHz = wantWave
+        ? earId === "mcleod"
+          ? mcleodPitch(time, sampleRate)
+          : yinPitch(time, sampleRate)
+        : 0;
+      micHz = waveHz;
+      commitHeard(hearFlute(freq, sampleRate, analyser.fftSize, waveHz));
     }
     requestAnimationFrame(listen);
   };
@@ -2205,7 +2398,7 @@ function detectedEvent() {
   else if (!micOn && covers != null) pitch = LANES[covers] || "";
   if (!pitch && !drone) return null;
   const info = pitch ? PITCHES[pitch] : null;
-  const key = earId === "peaks2" ? pitch || "drone" : `${pitch}|${drone ? 1 : 0}`;
+  const key = earFollowsPitch() ? pitch || "drone" : `${pitch}|${drone ? 1 : 0}`;
   return {
     key,
     pitch,
@@ -2222,7 +2415,7 @@ function followFlute(beat) {
   const liveKey = freeLive ? freeLive.key : "";
   if (key === liveKey) {
     if (!freeLive) return;
-    if (earId === "peaks2" && Boolean(freeLive.drone) !== Boolean(det && det.drone)) {
+    if (earFollowsPitch() && Boolean(freeLive.drone) !== Boolean(det && det.drone)) {
       closeFreeLive(beat);
       if (det) openFreeLive(beat, det);
     } else freeLive.d = beat - freeLive.t;
@@ -3238,7 +3431,7 @@ function setEar(id) {
   micCovers = null;
   micDrone = false;
   micLabel = "";
-  if (micAnalyser) micAnalyser.smoothingTimeConstant = earId === "bands" || earId === "peaks2" ? 0.45 : 0.25;
+  if (micAnalyser) micAnalyser.smoothingTimeConstant = earSmoothing();
   paintEar();
 }
 

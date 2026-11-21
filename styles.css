@@ -1118,6 +1118,69 @@ h1 {
   color: var(--cream);
 }
 #tutorial-heard.right { color: var(--gold); }
+.tuner { margin-top: 22px; max-width: 460px; }
+#tutorial-way {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(48px, 8vw, 80px);
+  line-height: 0.9;
+  color: var(--cream);
+}
+.tuner.in #tutorial-way { color: var(--gold); }
+#tutorial-cents {
+  min-height: 1.3em;
+  margin-top: 8px;
+  font-family: var(--sans);
+  font-size: 26px;
+  font-weight: 560;
+  color: var(--cream);
+}
+.tuner.in #tutorial-cents { color: var(--gold); }
+.tuner.idle #tutorial-cents { color: var(--cream-dim); }
+.tuner-track {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.tuner-track span {
+  font-family: var(--sans);
+  font-size: 20px;
+  font-weight: 560;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+.tuner-rail {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(244, 236, 223, 0.22);
+}
+.tuner-rail::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  width: 2px;
+  height: 28px;
+  transform: translateX(-50%);
+  background: var(--gold);
+}
+#tutorial-needle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--cream);
+  box-shadow: 0 0 0 4px rgba(7, 6, 5, 0.65);
+}
+.tuner.in #tutorial-needle { background: var(--gold); }
+.tuner.idle #tutorial-needle { opacity: 0.4; }
 .play-bar.tutorial-bar {
   display: flex;
   justify-content: flex-end;
@@ -1827,9 +1890,12 @@ h1 {
   .call-badge { min-width: 148px; padding: 10px 18px 9px; }
   .call b { font-size: 32px; }
   #song-name, #free-title, #tutorial-title { font-size: 18px; }
-  .tutorial-copy { margin-left: 156px; margin-right: 16px; padding-top: 4vh; }
-  .tutorial-copy h2 { font-size: clamp(44px, 12vw, 72px); }
+  .tutorial-copy { margin-left: 148px; margin-right: 12px; padding-top: 2vh; }
+  .tutorial-copy h2 { font-size: clamp(40px, 10vw, 64px); }
   .tutorial-copy p { font-size: 16px; }
+  #tutorial-way { font-size: clamp(40px, 11vw, 64px); }
+  #tutorial-cents { font-size: 22px; }
+  .tuner-track span { font-size: 16px; }
   .bpm-read b { font-size: 18px; }
   .stage { margin: 8px 10px 0; }
   .play-bar.free-play-bar {

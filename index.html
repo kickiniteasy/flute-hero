@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=69" />
+    <link rel="stylesheet" href="styles.css?v=71" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -275,7 +275,16 @@
           <h2 id="tutorial-note">A5</h2>
           <p id="tutorial-hint">Leave every hole open.</p>
           <p id="tutorial-key">Key 0</p>
-          <p id="tutorial-heard"></p>
+          <div id="tutorial-tuner" class="tuner idle">
+            <div id="tutorial-way">Play</div>
+            <div id="tutorial-cents"></div>
+            <div class="tuner-track">
+              <span>Low</span>
+              <div class="tuner-rail"><i id="tutorial-needle"></i></div>
+              <span>High</span>
+            </div>
+          </div>
+          <p id="tutorial-heard" class="hidden"></p>
         </div>
       </div>
       <div class="play-bar tutorial-bar">
@@ -439,6 +448,20 @@
             </span>
             <span class="ear-using">Using</span>
           </button>
+          <button class="menu-nav ear" type="button" data-ear="yin" aria-pressed="false">
+            <span class="menu-copy">
+              <b>YIN</b>
+              <small>One pitch, read from the wave. This is the method tuner libraries use. It hears the held note, and it does not split the drone from the melody.</small>
+            </span>
+            <span class="ear-using">Using</span>
+          </button>
+          <button class="menu-nav ear" type="button" data-ear="mcleod" aria-pressed="false">
+            <span class="menu-copy">
+              <b>McLeod</b>
+              <small>One pitch, read from the wave. This is the method Aubio uses. It stays clearer on a noisy mic, and it does not split the drone from the melody.</small>
+            </span>
+            <span class="ear-using">Using</span>
+          </button>
         </div>
         <div class="menu-page hidden" data-menu="developer">
           <button id="open-title" class="menu-nav" type="button">
@@ -540,6 +563,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=70"></script>
+    <script src="game.js?v=71"></script>
   </body>
 </html>
