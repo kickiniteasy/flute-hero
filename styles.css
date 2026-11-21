@@ -792,6 +792,23 @@ h1 {
 }
 .holes i.covered { background: rgba(18, 10, 6, 0.62); }
 .holes i.wrong { background: rgba(170, 48, 36, 0.55); border-color: #d15d4c; box-shadow: none; }
+#tutorial-flute .holes i.target {
+  width: 22%;
+  background: #140e0a;
+  border: 2px solid #f4ecdf;
+  animation: tutorial-hole 1.15s ease-out infinite;
+  z-index: 2;
+}
+@keyframes tutorial-hole {
+  0% { box-shadow: 0 0 0 3px #f4ecdf, 0 0 0 4px rgba(244, 236, 223, 0.95); }
+  100% { box-shadow: 0 0 0 3px #f4ecdf, 0 0 0 16px rgba(244, 236, 223, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #tutorial-flute .holes i.target {
+    animation: none;
+    box-shadow: 0 0 0 3px #f4ecdf, 0 0 0 10px rgba(244, 236, 223, 0.55);
+  }
+}
 
 .hud {
   display: flex;
