@@ -1210,6 +1210,30 @@ h1 {
   cursor: pointer;
 }
 .menu-nav .menu-copy b { font-family: var(--serif); }
+.menu-nav.ear.on {
+  border-color: var(--gold);
+}
+.menu-nav.ear.on b { color: var(--gold); }
+.ear-using {
+  display: none;
+  flex: none;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.menu-nav.on .ear-using { display: block; }
+.menu-row.ear-flute {
+  justify-content: flex-start;
+  gap: 18px;
+}
+.ear-flute img {
+  width: 36px;
+  height: 108px;
+  object-fit: contain;
+  flex: none;
+}
 .menu-nav.sub::after {
   content: "";
   flex: none;
@@ -1799,6 +1823,11 @@ h1 {
   .menu-row {
     align-items: stretch;
     flex-direction: column;
+  }
+  .menu-row.ear-flute {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
   }
   .menu-row select { width: 100%; }
   .overlay { padding: 16px; }

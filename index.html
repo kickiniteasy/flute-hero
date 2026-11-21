@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=64" />
+    <link rel="stylesheet" href="styles.css?v=67" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -317,7 +317,7 @@
           <button class="menu-nav sub" type="button" data-go="settings">
             <span class="menu-copy">
               <b>Settings</b>
-              <small>Drone color, the microphone, and the title screen.</small>
+              <small>Drone color, note detection, the microphone, and the title screen.</small>
             </span>
           </button>
         </div>
@@ -332,6 +332,12 @@
               <option value="rainbow">Rainbow</option>
             </select>
           </label>
+          <button class="menu-nav sub" type="button" data-go="detection">
+            <span class="menu-copy">
+              <b>Note detection</b>
+              <small id="ear-menu-line">Peaks. The drone only when a second barrel is there.</small>
+            </span>
+          </button>
           <button class="menu-nav sub" type="button" data-go="microphone">
             <span class="menu-copy">
               <b>Microphone</b>
@@ -343,6 +349,36 @@
               <b>Developer</b>
               <small>Open the title screen.</small>
             </span>
+          </button>
+        </div>
+        <div class="menu-page hidden" data-menu="detection">
+          <div class="menu-row ear-flute">
+            <img id="ear-flute-img" src="assets/flute-a4.png" alt="" />
+            <span class="menu-copy">
+              <b id="ear-flute-name">A4 drone</b>
+              <small id="ear-flute-line">In hand. The ears listen for this flute.</small>
+            </span>
+          </div>
+          <button class="menu-nav ear" type="button" data-ear="bands" aria-pressed="false">
+            <span class="menu-copy">
+              <b>Bands</b>
+              <small>The first ear. A window around each note. The drone counts when it is loud enough beside the note.</small>
+            </span>
+            <span class="ear-using">Using</span>
+          </button>
+          <button class="menu-nav ear on" type="button" data-ear="peaks" aria-pressed="true">
+            <span class="menu-copy">
+              <b>Peaks</b>
+              <small>The next ear. A peak has to stand out, and the drone counts only when a second barrel is really there.</small>
+            </span>
+            <span class="ear-using">Using</span>
+          </button>
+          <button class="menu-nav ear" type="button" data-ear="held" aria-pressed="false">
+            <span class="menu-copy">
+              <b>Held</b>
+              <small>The latest ear. The drone stays with the note, and a harmonic of the drone does not take the fingering.</small>
+            </span>
+            <span class="ear-using">Using</span>
           </button>
         </div>
         <div class="menu-page hidden" data-menu="developer">
@@ -445,6 +481,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=62"></script>
+    <script src="game.js?v=64"></script>
   </body>
 </html>
