@@ -349,6 +349,21 @@ let laneFlashes = [];
 let raf = 0;
 
 let song = null;
+let tutorialOn = false;
+let tutorialStep = 0;
+let tutorialPhase = "lesson";
+let tutorialHold = 0;
+let tutorialAdvanceAt = 0;
+let tutorialRaf = 0;
+const LESSONS = [
+  { covers: 0, hint: "Leave every hole open." },
+  { covers: 1, hint: "Cover the hole nearest your mouth." },
+  { covers: 2, hint: "Cover two holes, from the mouth down." },
+  { covers: 3, hint: "Cover three holes, from the mouth down." },
+  { covers: 4, hint: "Cover four holes, from the mouth down." },
+  { covers: 5, hint: "Cover five. The hole at the foot stays open." },
+  { covers: 6, hint: "Cover all six holes." },
+];
 let chart = [];
 let startAt = 0;
 let paused = false;
@@ -658,16 +673,22 @@ function startSong(id) {
   raf = requestAnimationFrame(frame);
 }
 
-function stopSong() {
+function leaveTutorial() {
+  tutorialOn = false;
+  tutorialAdvanceAt = 0;
+  cancelAnimationFrame(tutorialRaf);
+}
+
+function stopSong(screen = "screen-map") {
   cancelAnimationFrame(raf);
   setDrone(false);
   song = null;
   paused = false;
-  showScreen("screen-select");
+  showScreen(screen);
 }
 
 function showScreen(id) {
-  for (const s of ["screen-title", "screen-map", "screen-select", "screen-play", "screen-free", "screen-flutes"]) {
+  for (const s of ["screen-title", "screen-map", "screen-select", "screen-play", "screen-free", "screen-flutes", "screen-tutorial"]) {
     $(s).classList.toggle("hidden", s !== id);
   }
   $("screen-results").classList.add("hidden");
@@ -785,7 +806,7 @@ function judge(beat) {
 
 function fitFlutes() {
   document.querySelectorAll(".flute-wrap").forEach((root) => {
-    if (root.id === "play-flute" || root.id === "free-flute") return;
+    if (root.id === "play-flute" || root.id === "free-flute" || root.id === "tutorial-flute") return;
     const h = root.clientHeight;
     if (h) root.style.width = (h * 141) / 1058 + "px";
   });
@@ -823,8 +844,82 @@ function resize() {
   fitFlutes();
   fitPlayFlute("play-flute");
   fitPlayFlute("free-flute");
+  fitPlayFlute("tutorial-flute");
   resizeCanvas(canvas);
   resizeCanvas(freeCanvas);
+}
+
+function paintTutorial() {
+  const flute = currentFlute();
+  const lesson = LESSONS[tutorialStep];
+  const done = tutorialPhase === "done";
+  $("tutorial-title").textContent = "Tutorial";
+  $("tutorial-blurb").textContent = done ? flute.title : `${tutorialStep + 1} / ${LESSONS.length}`;
+  $("tutorial-note").textContent = done ? "The barrel" : flute.names[lesson.covers];
+  $("tutorial-hint").textContent = done
+    ? "Seven fingerings, from the mouth down. The drone is the other barrel, and it can sit under any of them."
+    : lesson.hint;
+  $("tutorial-key").textContent = done ? "" : `Key ${lesson.covers}`;
+  $("tutorial-key").classList.toggle("hidden", done);
+  const next = $("tutorial-next");
+  next.textContent = done ? "Songs" : "Next";
+  next.classList.toggle("solid", done);
+  next.classList.toggle("text-btn", !done);
+}
+
+function advanceTutorial() {
+  tutorialHold = 0;
+  tutorialAdvanceAt = 0;
+  if (tutorialPhase === "done") return;
+  if (tutorialStep >= LESSONS.length - 1) {
+    tutorialPhase = "done";
+    paintTutorial();
+    return;
+  }
+  tutorialStep += 1;
+  paintTutorial();
+}
+
+function tutorialFrame() {
+  if (!tutorialOn) return;
+  const lesson = LESSONS[tutorialStep];
+  const covers = playerCovers();
+  const drone = playerDrone();
+  const heard = $("tutorial-heard");
+  paintFlute($("tutorial-flute"), covers, tutorialPhase === "lesson" ? lesson.covers : null, drone);
+  if (tutorialPhase === "done") {
+    heard.textContent = youLine();
+    heard.classList.remove("right");
+  } else if (covers === lesson.covers) {
+    tutorialHold += 1;
+    heard.textContent = "Yes";
+    heard.classList.add("right");
+    if (tutorialHold >= 8 && !tutorialAdvanceAt) tutorialAdvanceAt = performance.now() + 520;
+  } else {
+    tutorialHold = 0;
+    tutorialAdvanceAt = 0;
+    heard.classList.remove("right");
+    heard.textContent = covers == null && !drone ? (micOn ? "Listening" : "Play this fingering") : youLine();
+  }
+  if (tutorialAdvanceAt && performance.now() >= tutorialAdvanceAt) advanceTutorial();
+  tutorialRaf = requestAnimationFrame(tutorialFrame);
+}
+
+function startTutorial() {
+  ensureAudio();
+  keepAwake();
+  audioCtx.resume();
+  tutorialOn = true;
+  tutorialStep = 0;
+  tutorialPhase = "lesson";
+  tutorialHold = 0;
+  tutorialAdvanceAt = 0;
+  showScreen("screen-tutorial");
+  paintTutorial();
+  $("tutorial-heard").textContent = micOn ? "Listening" : "Play this fingering";
+  $("tutorial-heard").classList.remove("right");
+  cancelAnimationFrame(tutorialRaf);
+  tutorialRaf = requestAnimationFrame(tutorialFrame);
 }
 
 function frame() {
@@ -2663,7 +2758,10 @@ window.addEventListener("keydown", (e) => {
   if (cover == null) {
     if (e.code === "Escape") {
       if (freeRunning) leaveFree();
-      else if (song) stopSong();
+      else if (tutorialOn) {
+        leaveTutorial();
+        showScreen("screen-map");
+      } else if (song) stopSong();
       else if (!$("screen-flutes").classList.contains("hidden")) showScreen("screen-map");
       else if (!$("screen-select").classList.contains("hidden")) showScreen("screen-map");
     }
@@ -2685,8 +2783,8 @@ window.addEventListener("keyup", (e) => {
   if (down.get(cover)) down.delete(cover);
 });
 
-$("back").addEventListener("click", stopSong);
-$("results-songs").addEventListener("click", stopSong);
+$("back").addEventListener("click", () => stopSong("screen-map"));
+$("results-songs").addEventListener("click", () => stopSong("screen-select"));
 $("again").addEventListener("click", () => song && startSong(song.id));
 $("restart").addEventListener("click", () => song && startSong(song.id));
 function setPauseButton(isPaused) {
@@ -2710,7 +2808,7 @@ $("pause").addEventListener("click", async () => {
   }
 });
 function setMicButton(on) {
-  for (const id of ["mic", "free-mic"]) {
+  for (const id of ["mic", "free-mic", "tutorial-mic"]) {
     const btn = $(id);
     if (!btn) continue;
     btn.classList.toggle("on", on);
@@ -2732,7 +2830,7 @@ $("guide").addEventListener("click", () => {
   setGuideButton(guideOn);
   if (guideBus) guideBus.gain.value = guideOn ? 0.2 : 0;
 });
-for (const id of ["mic", "free-mic"]) {
+for (const id of ["mic", "free-mic", "tutorial-mic"]) {
   $(id).addEventListener("click", (event) => {
     if (!eatMicClick) return;
     eatMicClick = false;
@@ -2741,13 +2839,14 @@ for (const id of ["mic", "free-mic"]) {
   $(id).addEventListener("click", () => toggleMic());
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && (song || micOn || freeRunning)) keepAwake();
+  if (document.visibilityState === "visible" && (song || micOn || freeRunning || tutorialOn)) keepAwake();
 });
 window.addEventListener("resize", resize);
 
 mountHoles($("title-flute"));
 mountHoles($("play-flute"));
 mountHoles($("free-flute"));
+mountHoles($("tutorial-flute"));
 paintFlute($("title-flute"), 0, 0, false);
 paintAlbum();
 function buildLabel() {
@@ -2990,18 +3089,33 @@ function showMenu(page) {
 }
 
 function goSongs() {
+  leaveTutorial();
   if (freeRunning) leaveFree("screen-select");
-  else if (song) stopSong();
+  else if (song) stopSong("screen-select");
   else showScreen("screen-select");
 }
 
 function goFlutes() {
+  leaveTutorial();
   if (freeRunning) leaveFree();
   else if (song) stopSong();
   showScreen("screen-flutes");
 }
 
+function goTutorial() {
+  if (freeRunning) leaveFree("screen-map");
+  if (song) {
+    cancelAnimationFrame(raf);
+    setDrone(false);
+    song = null;
+    paused = false;
+    $("screen-results").classList.add("hidden");
+  }
+  startTutorial();
+}
+
 function goFree() {
+  leaveTutorial();
   if (freeRunning) return;
   if (song) {
     cancelAnimationFrame(raf);
@@ -3054,7 +3168,10 @@ $("menu-body").addEventListener("click", (event) => {
   }
   const go = event.target.closest("[data-go]");
   if (!go) return;
-  if (go.dataset.go === "songs") {
+  if (go.dataset.go === "tutorial") {
+    closeMenu();
+    goTutorial();
+  } else if (go.dataset.go === "songs") {
     closeMenu();
     goSongs();
   } else if (go.dataset.go === "free") {
@@ -3068,11 +3185,25 @@ $("menu-body").addEventListener("click", (event) => {
 $("mic-ask").addEventListener("click", () => askMicAgain());
 $("app-menu").addEventListener("click", toggleMenu);
 $("begin").addEventListener("click", () => showScreen("screen-map"));
+$("pick-tutorial").addEventListener("click", () => goTutorial());
 $("pick-songs").addEventListener("click", () => showScreen("screen-select"));
 $("pick-flutes").addEventListener("click", () => showScreen("screen-flutes"));
 $("pick-free").addEventListener("click", () => startFree());
 $("select-back").addEventListener("click", () => showScreen("screen-map"));
 $("flutes-back").addEventListener("click", () => showScreen("screen-map"));
+$("tutorial-back").addEventListener("click", () => {
+  leaveTutorial();
+  showScreen("screen-map");
+});
+$("tutorial-next").addEventListener("click", () => {
+  if (!tutorialOn) return;
+  if (tutorialPhase === "done") {
+    leaveTutorial();
+    showScreen("screen-select");
+    return;
+  }
+  advanceTutorial();
+});
 
 function paintDronePill() {
   const pill = $("drone-pill");
@@ -3094,7 +3225,7 @@ function selectFlute(id) {
 
 function applyFluteArt() {
   const src = currentFlute().art;
-  for (const id of ["title-flute", "play-flute", "free-flute"]) {
+  for (const id of ["title-flute", "play-flute", "free-flute", "tutorial-flute"]) {
     const img = document.querySelector(`#${id} img`);
     if (img && img.getAttribute("src") !== src) img.src = src;
   }
@@ -3583,7 +3714,7 @@ function closeFreeSettings() {
   if (panel.open) panel.close();
 }
 
-$("free-back").addEventListener("click", leaveFree);
+$("free-back").addEventListener("click", () => leaveFree());
 $("free-reset").addEventListener("click", resetFree);
 $("free-play").addEventListener("click", onTrackPlay);
 $("free-settings-open").addEventListener("click", openFreeSettings);
