@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=74" />
+    <link rel="stylesheet" href="styles.css?v=76" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -276,11 +276,11 @@
           <p id="tutorial-hint">Leave every hole open.</p>
           <p id="tutorial-key">Key 0</p>
           <div id="tutorial-tuner" class="tuner idle">
-            <div id="tutorial-way">Play</div>
-            <div id="tutorial-cents"></div>
+            <div id="tutorial-way" class="meter-way">Play</div>
+            <div id="tutorial-cents" class="meter-cents"></div>
             <div class="tuner-track">
               <span>Low</span>
-              <div class="tuner-rail"><i id="tutorial-needle"></i></div>
+              <div class="tuner-rail"><i id="tutorial-needle" class="meter-needle"></i></div>
               <span>High</span>
             </div>
           </div>
@@ -296,6 +296,59 @@
             </svg>
           </button>
           <button id="tutorial-next" class="text-btn" type="button">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-tune" class="screen hidden">
+      <header class="hud">
+        <button id="tune-back" class="text-btn icon-btn" type="button" aria-label="Back">
+          <svg class="icon icon-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"></path></svg>
+        </button>
+        <div class="hud-title">
+          <div id="tune-title">Tune</div>
+          <div id="tune-blurb">1 / 15</div>
+        </div>
+      </header>
+      <div class="stage">
+        <div id="tune-flute" class="flute-wrap">
+          <div class="flute-body">
+            <img src="assets/flute-a4.png" alt="" />
+            <div class="glow"></div>
+            <div class="open-mark"></div>
+            <div class="holes"></div>
+          </div>
+        </div>
+        <div id="tune-play" class="tutorial-copy">
+          <p id="tune-ask" class="eyebrow">The drone</p>
+          <h2 id="tune-name">Drone</h2>
+          <p id="tune-hint">Play only the drone barrel. Leave the melody silent.</p>
+          <div id="tune-meter" class="tuner idle">
+            <div id="tune-way" class="meter-way">Play</div>
+            <div id="tune-cents" class="meter-cents"></div>
+            <div class="tuner-track">
+              <span>Low</span>
+              <div class="tuner-rail"><i id="tune-needle" class="meter-needle"></i></div>
+              <span>High</span>
+            </div>
+          </div>
+          <p id="tune-heard"></p>
+          <p id="tune-chart"></p>
+        </div>
+        <div id="tune-review" class="tune-review hidden"></div>
+      </div>
+      <div class="play-bar tutorial-bar">
+        <div class="panel-actions">
+          <button id="tune-mic" class="text-btn icon-btn" type="button" aria-label="Use the flute" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14.2a3.1 3.1 0 0 0 3.1-3.1V6.1a3.1 3.1 0 0 0-6.2 0v5a3.1 3.1 0 0 0 3.1 3.1z"></path>
+              <path d="M7.2 11.2a.95.95 0 0 0-1.9.15 6.7 6.7 0 0 0 5.75 6.35V20H8.6a.95.95 0 0 0 0 1.9h6.8a.95.95 0 0 0 0-1.9h-2.45v-2.3A6.7 6.7 0 0 0 18.7 11.35a.95.95 0 0 0-1.9-.15 4.8 4.8 0 0 1-9.6 0z"></path>
+            </svg>
+          </button>
+          <button id="tune-prev" class="text-btn hidden" type="button">Previous</button>
+          <button id="tune-use" class="solid hidden" type="button">Use these</button>
+          <button id="tune-chart-btn" class="text-btn hidden" type="button">Chart</button>
+          <button id="tune-next" class="text-btn" type="button">Next</button>
         </div>
       </div>
     </section>
@@ -563,6 +616,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=71"></script>
+    <script src="game.js?v=76"></script>
   </body>
 </html>

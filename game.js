@@ -38,6 +38,72 @@ const SHUT_FLUTES = [
   { name: "F" },
   { name: "Bamboo" },
 ];
+const TUNE_KEY = "flute-hero-tune";
+const PITCH_CLASS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const FACTORY = {};
+for (const flute of Object.values(FLUTES)) {
+  FACTORY[flute.id] = {
+    drone: flute.drone,
+    notes: flute.notes.slice(),
+    names: flute.names.slice(),
+  };
+}
+
+function spellHz(hz) {
+  const midiFloat = 69 + 12 * Math.log2(hz / 440);
+  const midi = Math.round(midiFloat);
+  const cents = Math.round((midiFloat - midi) * 100);
+  const name = PITCH_CLASS[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+  return { name, cents, midi };
+}
+
+function readTuneStore() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TUNE_KEY) || "{}");
+    if (!raw || typeof raw !== "object") return {};
+    return raw;
+  } catch {
+    return {};
+  }
+}
+
+function applyStoredTune() {
+  const saved = readTuneStore();
+  for (const flute of Object.values(FLUTES)) {
+    const row = saved[flute.id];
+    if (!row) continue;
+    if (row.drone > 50 && row.drone < 4000) flute.drone = row.drone;
+    if (Array.isArray(row.notes)) {
+      row.notes.forEach((hz, i) => {
+        if (hz > 50 && hz < 4000 && i < flute.notes.length) flute.notes[i] = hz;
+      });
+    }
+    if (Array.isArray(row.names)) {
+      row.names.forEach((name, i) => {
+        if (typeof name === "string" && name && i < flute.names.length) flute.names[i] = name;
+      });
+    }
+  }
+}
+applyStoredTune();
+
+function writeTune(id) {
+  const saved = readTuneStore();
+  const flute = FLUTES[id];
+  const factory = FACTORY[id];
+  const notes = flute.notes.map((hz, i) => (Math.abs(hz - factory.notes[i]) < 0.05 ? null : Math.round(hz * 100) / 100));
+  const names = flute.names.map((name, i) => (name === factory.names[i] ? null : name));
+  const drone = Math.abs(flute.drone - factory.drone) < 0.05 ? null : Math.round(flute.drone * 100) / 100;
+  const untouched = drone == null && notes.every((hz) => hz == null) && names.every((name) => name == null);
+  if (untouched) delete saved[id];
+  else saved[id] = { drone, notes, names };
+  try {
+    localStorage.setItem(TUNE_KEY, JSON.stringify(saved));
+  } catch {
+    /* the browser can refuse storage */
+  }
+}
+
 const FLUTE_KEY = "flute-hero-flute";
 let fluteId = localStorage.getItem(FLUTE_KEY);
 if (!FLUTES[fluteId]) fluteId = "a4";
@@ -363,6 +429,15 @@ let raf = 0;
 
 let song = null;
 let tutorialOn = false;
+let tuneOn = false;
+let tuneIndex = 0;
+let tunePhase = "ask";
+let tuneRaf = 0;
+let tuneSamples = [];
+let tuneTakes = [];
+let tuneFluteId = "";
+let tuneApplied = false;
+let tuneFreq = null;
 let tutorialStep = 0;
 let tutorialPhase = "lesson";
 let tutorialHold = 0;
@@ -701,7 +776,8 @@ function stopSong(screen = "screen-map") {
 }
 
 function showScreen(id) {
-  for (const s of ["screen-title", "screen-map", "screen-select", "screen-play", "screen-free", "screen-flutes", "screen-tutorial"]) {
+  if (id !== "screen-tune") stopTune();
+  for (const s of ["screen-title", "screen-map", "screen-select", "screen-play", "screen-free", "screen-flutes", "screen-tutorial", "screen-tune"]) {
     $(s).classList.toggle("hidden", s !== id);
   }
   $("screen-results").classList.add("hidden");
@@ -819,7 +895,7 @@ function judge(beat) {
 
 function fitFlutes() {
   document.querySelectorAll(".flute-wrap").forEach((root) => {
-    if (root.id === "play-flute" || root.id === "free-flute" || root.id === "tutorial-flute") return;
+    if (root.id === "play-flute" || root.id === "free-flute" || root.id === "tutorial-flute" || root.id === "tune-flute") return;
     const h = root.clientHeight;
     if (h) root.style.width = (h * 141) / 1058 + "px";
   });
@@ -858,6 +934,7 @@ function resize() {
   fitPlayFlute("play-flute");
   fitPlayFlute("free-flute");
   fitPlayFlute("tutorial-flute");
+  fitPlayFlute("tune-flute");
   resizeCanvas(canvas);
   resizeCanvas(freeCanvas);
 }
@@ -975,6 +1052,468 @@ function startTutorial() {
   paintTuner(null, micOn ? "Listening" : "Play");
   cancelAnimationFrame(tutorialRaf);
   tutorialRaf = requestAnimationFrame(tutorialFrame);
+}
+
+function tunePlan() {
+  const factory = FACTORY[currentFlute().id];
+  const steps = [
+    {
+      kind: "drone",
+      ask: "The drone",
+      name: "Drone",
+      hint: "Play only the drone barrel. Leave the melody silent.",
+      chartHz: factory.drone,
+      chartName: spellHz(factory.drone).name,
+    },
+  ];
+  for (const lesson of LESSONS) {
+    const chartHz = factory.notes[lesson.covers];
+    const chartName = factory.names[lesson.covers];
+    const closed = lesson.covers === 6 ? "Cover all six holes on the melody barrel." : lesson.hint;
+    steps.push({
+      kind: "note",
+      covers: lesson.covers,
+      ask: "The note",
+      name: chartName,
+      hint: `${closed} Leave the drone off.`,
+      chartHz,
+      chartName,
+    });
+    steps.push({
+      kind: "both",
+      covers: lesson.covers,
+      ask: "With the drone",
+      name: chartName,
+      hint: `${closed} Hold the drone under it.`,
+      chartHz,
+      chartName,
+    });
+  }
+  return steps;
+}
+
+function nearHz(a, b, cents = 45) {
+  return a > 0 && b > 0 && Math.abs(1200 * Math.log2(a / b)) < cents;
+}
+
+function tuneDroneHz() {
+  const take = tuneTakes[0];
+  if (take?.secondHz && take.secondHz < take.hz && nearHz(take.secondHz, FACTORY[currentFlute().id].drone, 80)) return take.secondHz;
+  return take?.hz || FACTORY[currentFlute().id].drone;
+}
+
+function pitchWords(hz) {
+  const spelled = spellHz(hz);
+  const off = spelled.cents;
+  const way = off === 0 ? "" : ` · ${Math.abs(off)}¢ ${off < 0 ? "low" : "high"}`;
+  return `${Math.round(hz)} Hz · ${spelled.name}${way}`;
+}
+
+function takenMelody(take, droneHz) {
+  if (!take?.hz) return 0;
+  const pitches = [take.hz, take.secondHz].filter((hz) => hz > 0);
+  let melody = 0;
+  for (const hz of pitches) {
+    if (nearHz(hz, droneHz)) continue;
+    if (!melody || hz > melody) melody = hz;
+  }
+  return melody;
+}
+
+function paintTuneFlute(step) {
+  const target = step && step.kind !== "drone" ? step.covers : null;
+  const drone = !step || step.kind !== "note";
+  paintFlute($("tune-flute"), null, target, drone);
+}
+
+function recordedLine(take) {
+  if (!take?.hz) return "";
+  let line = `Recorded · ${pitchWords(take.hz)}`;
+  if (take.secondHz) line += ` · and ${pitchWords(take.secondHz)}`;
+  return line;
+}
+
+function paintTuneAsk() {
+  const step = tunePlan()[tuneIndex];
+  const count = tunePlan().length;
+  $("tune-title").textContent = "Tune";
+  $("tune-blurb").textContent = `${currentFlute().name} · ${tuneIndex + 1} / ${count}`;
+  $("tune-ask").textContent = step.ask;
+  $("tune-name").textContent = step.name;
+  $("tune-hint").textContent = step.hint;
+  $("tune-chart").textContent = `Chart · ${step.chartName} · ${Math.round(step.chartHz)} Hz`;
+  $("tune-prev").classList.toggle("hidden", tuneIndex === 0);
+  $("tune-next").textContent = tuneIndex >= count - 1 ? "Review" : "Next";
+  $("tune-mic").classList.remove("hidden");
+  $("tune-use").classList.add("hidden");
+  $("tune-chart-btn").classList.add("hidden");
+  $("tune-play").classList.remove("hidden");
+  $("tune-flute").classList.remove("hidden");
+  $("tune-review").classList.add("hidden");
+  const img = $("tune-flute").querySelector("img");
+  const src = currentFlute().art;
+  if (img && img.getAttribute("src") !== src) img.src = src;
+  paintTuneFlute(step);
+}
+
+function paintTuneReadout(cents, headline, sub, mode) {
+  const tuner = $("tune-meter");
+  const way = $("tune-way");
+  const num = $("tune-cents");
+  const needle = $("tune-needle");
+  tuner.classList.remove("in", "low", "high", "idle", "off");
+  if (cents == null) {
+    way.textContent = headline;
+    num.textContent = sub || "";
+    needle.style.left = "50%";
+    tuner.classList.add("idle");
+    return;
+  }
+  const peg = Math.max(-50, Math.min(50, Math.round(cents)));
+  needle.style.left = `${50 + peg}%`;
+  way.textContent = headline;
+  num.textContent = sub;
+  tuner.classList.add(mode);
+}
+
+function takeTuneSample() {
+  if (!(micHz > 0)) {
+    tuneSamples = [];
+    return 0;
+  }
+  tuneSamples.push(micHz);
+  if (tuneSamples.length > 12) tuneSamples.shift();
+  if (tuneSamples.length < 6) return 0;
+  const sorted = tuneSamples.slice().sort((a, b) => a - b);
+  const spread = Math.abs(1200 * Math.log2(sorted[sorted.length - 1] / sorted[0]));
+  if (spread > 30) return 0;
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function harmonicOf(hz, other) {
+  const cents = Math.abs(1200 * Math.log2(hz / other));
+  return Math.abs(cents - 1200) < 60 || Math.abs(cents - 1902) < 50;
+}
+
+function tuneSecond(leadHz) {
+  if (!micAnalyser || !(leadHz > 0) || !audioCtx) return 0;
+  if (!tuneFreq || tuneFreq.length !== micAnalyser.frequencyBinCount) {
+    tuneFreq = new Float32Array(micAnalyser.frequencyBinCount);
+  }
+  micAnalyser.getFloatFrequencyData(tuneFreq);
+  const binHz = audioCtx.sampleRate / micAnalyser.fftSize;
+  const lo = Math.max(1, Math.floor(240 / binHz));
+  const hi = Math.min(tuneFreq.length - 2, Math.ceil(1500 / binHz));
+  const peaks = [];
+  for (let i = lo; i < hi; i++) {
+    if (tuneFreq[i] <= tuneFreq[i - 1] || tuneFreq[i] < tuneFreq[i + 1] || tuneFreq[i] < -58) continue;
+    const left = tuneFreq[i - 1];
+    const right = tuneFreq[i + 1];
+    const denom = left - 2 * tuneFreq[i] + right;
+    const delta = denom === 0 ? 0 : (0.5 * (left - right)) / denom;
+    peaks.push({ hz: (i + delta) * binHz, db: tuneFreq[i] });
+  }
+  peaks.sort((a, b) => b.db - a.db);
+  let leadDb = -120;
+  for (const peak of peaks) {
+    if (nearHz(peak.hz, leadHz, 50)) leadDb = Math.max(leadDb, peak.db);
+  }
+  if (leadDb < -100 && peaks.length) leadDb = peaks[0].db;
+  for (const peak of peaks) {
+    if (nearHz(peak.hz, leadHz, 50)) continue;
+    if (harmonicOf(peak.hz, leadHz)) continue;
+    if (peak.db < leadDb - 18) continue;
+    return peak.hz;
+  }
+  return 0;
+}
+
+function readTune(hz, step) {
+  const heard = spellHz(hz);
+  const cents = 1200 * Math.log2(hz / step.chartHz);
+  const droneHz = tuneDroneHz();
+  const onDrone = nearHz(hz, droneHz, 35);
+  const stepIsDronePitch = step.kind === "drone" || nearHz(step.chartHz, droneHz, 50);
+  if (onDrone && !stepIsDronePitch) {
+    return {
+      cents,
+      mode: "off",
+      headline: "Drone",
+      sub: `This step is ${step.chartName}`,
+      detail: `${Math.round(hz)} Hz · ${heard.name}. This is the drone.`,
+    };
+  }
+  if (step.kind !== "drone" && heard.name !== step.chartName) {
+    const gap = heard.midi - spellHz(step.chartHz).midi;
+    const octave = Math.abs(gap) === 12;
+    return {
+      cents,
+      mode: "off",
+      headline: heard.name,
+      sub: octave ? (gap < 0 ? "An octave low" : "An octave high") : `Chart says ${step.chartName}`,
+      detail: octave
+        ? `${Math.round(hz)} Hz · ${heard.name}. An octave ${gap < 0 ? "below" : "above"} ${step.chartName}.`
+        : `${Math.round(hz)} Hz · ${heard.name}. The chart calls this ${step.chartName}.`,
+    };
+  }
+  if (step.kind === "drone" && heard.name !== step.chartName) {
+    const gap = heard.midi - spellHz(step.chartHz).midi;
+    const octave = Math.abs(gap) === 12;
+    return {
+      cents,
+      mode: "off",
+      headline: heard.name,
+      sub: octave ? (gap < 0 ? "An octave low" : "An octave high") : `Chart says ${step.chartName}`,
+      detail: `${Math.round(hz)} Hz · ${heard.name}. The chart has the drone at ${step.chartName}.`,
+    };
+  }
+  if (Math.abs(Math.round(cents)) > 15) {
+    const low = cents < 0;
+    return {
+      cents,
+      mode: low ? "low" : "high",
+      headline: low ? "Low" : "High",
+      sub: `${Math.abs(Math.round(cents))} cents ${low ? "low" : "high"}`,
+      detail: `${Math.round(hz)} Hz · ${heard.name}`,
+    };
+  }
+  return { cents, mode: "in", headline: "In tune", sub: "On the chart", detail: `${Math.round(hz)} Hz · ${heard.name}` };
+}
+
+function recordTune(hz, step) {
+  const secondHz = step.kind === "note" ? 0 : tuneSecond(hz);
+  const prev = tuneTakes[tuneIndex];
+  if (prev && nearHz(prev.hz, hz, 12) && (!secondHz || nearHz(prev.secondHz, secondHz, 12))) return prev;
+  tuneApplied = false;
+  const take = {
+    hz: Math.round(hz * 100) / 100,
+    name: spellHz(hz).name,
+    secondHz: secondHz ? Math.round(secondHz * 100) / 100 : 0,
+    secondName: secondHz ? spellHz(secondHz).name : "",
+  };
+  tuneTakes[tuneIndex] = take;
+  return take;
+}
+
+function tuneFrame() {
+  if (!tuneOn || tunePhase !== "ask") return;
+  const step = tunePlan()[tuneIndex];
+  paintTuneFlute(step);
+  const hz = takeTuneSample();
+  const heard = $("tune-heard");
+  if (!(hz > 0)) {
+    const take = tuneTakes[tuneIndex];
+    if (take?.hz) {
+      paintTuneReadout(null, "Recorded", "");
+      heard.textContent = recordedLine(take);
+      heard.classList.add("kept");
+      heard.classList.remove("warn");
+    } else {
+      paintTuneReadout(null, micOn ? "Listening" : "Play", "");
+      heard.textContent = micOn ? "Play a steady pitch. It records." : "The microphone is off.";
+      heard.classList.remove("kept", "warn");
+    }
+  } else {
+    const read = readTune(hz, step);
+    paintTuneReadout(read.cents, read.headline, read.sub, read.mode);
+    heard.textContent = recordedLine(recordTune(hz, step));
+    heard.classList.toggle("warn", read.mode === "off");
+    heard.classList.toggle("kept", read.mode !== "off");
+  }
+  tuneRaf = requestAnimationFrame(tuneFrame);
+}
+
+function tuneLine(text, warn) {
+  const p = document.createElement("p");
+  p.textContent = text;
+  if (warn) p.className = "warn";
+  return p;
+}
+
+function fluteIsFactory() {
+  const flute = currentFlute();
+  const factory = FACTORY[flute.id];
+  if (Math.abs(flute.drone - factory.drone) >= 0.05) return false;
+  return factory.notes.every((hz, i) => Math.abs(flute.notes[i] - hz) < 0.05 && flute.names[i] === factory.names[i]);
+}
+
+function paintTuneReview() {
+  const plan = tunePlan();
+  const droneHz = tuneDroneHz();
+  const any = tuneTakes.some((take) => take?.hz);
+  const lead = document.createElement("p");
+  lead.className = "tune-lead";
+  lead.textContent = !any
+    ? "Play each note, then the same note with the drone. A steady pitch is recorded."
+    : tuneApplied
+      ? "These pitches are what the flute uses now."
+      : "These are the pitches this flute played. Use them in place of the chart.";
+  const heading = document.createElement("h2");
+  heading.textContent = currentFlute().title;
+  const rows = [heading, lead];
+  const droneTake = tuneTakes[0];
+  const droneArticle = document.createElement("article");
+  const droneTitle = document.createElement("b");
+  droneTitle.textContent = "Drone";
+  const droneLines = [tuneLine(`Chart · ${pitchWords(plan[0].chartHz)}`)];
+  if (droneTake?.hz) {
+    const off = !nearHz(droneTake.hz, plan[0].chartHz, 15) || droneTake.name !== plan[0].chartName;
+    droneLines.push(tuneLine(`Heard · ${pitchWords(droneTake.hz)}`, off));
+  } else droneLines.push(tuneLine("Not recorded"));
+  const beside = [];
+  plan.forEach((step, i) => {
+    if (step.kind !== "both" || !tuneTakes[i]?.hz) return;
+    const take = tuneTakes[i];
+    const hit = [take.hz, take.secondHz].find((hz) => nearHz(hz, droneHz));
+    if (hit) beside.push(hit);
+  });
+  if (beside.length) {
+    const low = Math.round(Math.min(...beside));
+    const high = Math.round(Math.max(...beside));
+    droneLines.push(tuneLine(low === high ? `Beside the notes · ${low} Hz` : `Beside the notes · ${low}–${high} Hz`));
+  }
+  droneArticle.append(droneTitle, ...droneLines);
+  rows.push(droneArticle);
+  plan.forEach((step, i) => {
+    if (step.kind !== "note") return;
+    const alone = tuneTakes[i];
+    const pair = tuneTakes[i + 1];
+    const article = document.createElement("article");
+    const title = document.createElement("b");
+    title.textContent = step.chartName;
+    const lines = [tuneLine(`Chart · ${pitchWords(step.chartHz)}`)];
+    if (alone?.hz) {
+      lines.push(tuneLine(`Alone · ${pitchWords(alone.hz)}`, alone.name !== step.chartName || !nearHz(alone.hz, step.chartHz, 15)));
+      if (alone.name !== step.chartName) lines.push(tuneLine(`This fingering sounds like ${alone.name}.`, true));
+    } else lines.push(tuneLine("Alone · not recorded"));
+    if (!pair?.hz) lines.push(tuneLine("With the drone · not recorded"));
+    else {
+      const melody = takenMelody(pair, droneHz);
+      const droneHit = [pair.hz, pair.secondHz].find((hz) => nearHz(hz, droneHz));
+      if (melody && droneHit) {
+        const warn = Boolean(alone?.hz) && !nearHz(melody, alone.hz, 40);
+        lines.push(tuneLine(`With the drone · ${pitchWords(melody)} · drone ${pitchWords(droneHit)}`, warn));
+        if (warn) lines.push(tuneLine("This does not match the note alone.", true));
+      } else if (melody) lines.push(tuneLine(`With the drone · ${pitchWords(melody)}. The drone did not stand apart.`, true));
+      else if (nearHz(step.chartHz, droneHz, 50)) lines.push(tuneLine("With the drone · same pitch as the drone."));
+      else lines.push(tuneLine("With the drone · only the drone.", true));
+    }
+    article.append(title, ...lines);
+    rows.push(article);
+  });
+  $("tune-review").replaceChildren(...rows);
+  $("tune-use").disabled = !any || tuneApplied;
+  $("tune-use").textContent = tuneApplied ? "In the flute" : "Use these";
+  $("tune-chart-btn").classList.toggle("hidden", fluteIsFactory());
+}
+
+function showTuneReview() {
+  tunePhase = "review";
+  $("tune-title").textContent = "Tune";
+  $("tune-blurb").textContent = "Recorded";
+  $("tune-play").classList.add("hidden");
+  $("tune-flute").classList.add("hidden");
+  $("tune-review").classList.remove("hidden");
+  $("tune-mic").classList.add("hidden");
+  $("tune-prev").classList.remove("hidden");
+  $("tune-use").classList.remove("hidden");
+  $("tune-next").textContent = "Done";
+  paintTuneReview();
+}
+
+function stopTune() {
+  tuneOn = false;
+  tuneSamples = [];
+  cancelAnimationFrame(tuneRaf);
+}
+
+function openTune() {
+  if (tuneFluteId !== fluteId) {
+    tuneFluteId = fluteId;
+    tuneTakes = [];
+    tuneIndex = 0;
+    tunePhase = "ask";
+    tuneApplied = false;
+  }
+  tuneOn = true;
+  showScreen("screen-tune");
+  if (tunePhase === "review") showTuneReview();
+  else paintTuneAsk();
+  cancelAnimationFrame(tuneRaf);
+  tuneRaf = requestAnimationFrame(tuneFrame);
+  startMic(true);
+}
+
+function closeTune() {
+  stopTune();
+  showScreen("screen-flutes");
+  paintFluteScreen();
+}
+
+function advanceTune() {
+  if (!tuneOn) return;
+  if (tunePhase === "review") {
+    closeTune();
+    return;
+  }
+  if (tuneIndex >= tunePlan().length - 1) {
+    showTuneReview();
+    return;
+  }
+  tuneIndex += 1;
+  tuneSamples = [];
+  paintTuneAsk();
+}
+
+function retreatTune() {
+  if (!tuneOn) return;
+  if (tunePhase === "review") {
+    tunePhase = "ask";
+    tuneIndex = tunePlan().length - 1;
+    tuneSamples = [];
+    paintTuneAsk();
+    return;
+  }
+  if (tuneIndex === 0) return;
+  tuneIndex -= 1;
+  tuneSamples = [];
+  paintTuneAsk();
+}
+
+function applyTuneTakes() {
+  const flute = currentFlute();
+  const plan = tunePlan();
+  const droneHz = tuneDroneHz();
+  if (tuneTakes[0]?.hz) flute.drone = tuneDroneHz();
+  plan.forEach((step, i) => {
+    if (step.kind !== "note") return;
+    const hz = tuneTakes[i]?.hz || takenMelody(tuneTakes[i + 1], droneHz);
+    if (!(hz > 0)) return;
+    flute.notes[step.covers] = Math.round(hz * 100) / 100;
+    flute.names[step.covers] = spellHz(hz).name;
+  });
+  writeTune(flute.id);
+  tuneApplied = true;
+  tuneDroneVoice();
+  paintDronePill();
+  paintTuneReview();
+}
+
+function restoreTuneChart() {
+  const flute = currentFlute();
+  const factory = FACTORY[flute.id];
+  flute.drone = factory.drone;
+  factory.notes.forEach((hz, i) => {
+    flute.notes[i] = hz;
+  });
+  factory.names.forEach((name, i) => {
+    flute.names[i] = name;
+  });
+  writeTune(flute.id);
+  tuneApplied = false;
+  tuneDroneVoice();
+  paintDronePill();
+  paintTuneReview();
 }
 
 function frame() {
@@ -2087,7 +2626,7 @@ function openMic(stream) {
     } else {
       analyser.getFloatFrequencyData(freq);
       const sampleRate = audioCtx.sampleRate;
-      const wantWave = tutorialOn || earId === "yin" || earId === "mcleod";
+      const wantWave = tutorialOn || tuneOn || earId === "yin" || earId === "mcleod";
       const waveHz = wantWave
         ? earId === "mcleod"
           ? mcleodPitch(time, sampleRate)
@@ -3130,7 +3669,8 @@ window.addEventListener("keydown", (e) => {
       else if (tutorialOn) {
         leaveTutorial();
         showScreen("screen-map");
-      } else if (song) stopSong();
+      }       else if (song) stopSong();
+      else if (!$("screen-tune").classList.contains("hidden")) closeTune();
       else if (!$("screen-flutes").classList.contains("hidden")) showScreen("screen-map");
       else if (!$("screen-select").classList.contains("hidden")) showScreen("screen-map");
     }
@@ -3177,7 +3717,7 @@ $("pause").addEventListener("click", async () => {
   }
 });
 function setMicButton(on) {
-  for (const id of ["mic", "free-mic", "tutorial-mic"]) {
+  for (const id of ["mic", "free-mic", "tutorial-mic", "tune-mic"]) {
     const btn = $(id);
     if (!btn) continue;
     btn.classList.toggle("on", on);
@@ -3199,7 +3739,7 @@ $("guide").addEventListener("click", () => {
   setGuideButton(guideOn);
   if (guideBus) guideBus.gain.value = guideOn ? 0.2 : 0;
 });
-for (const id of ["mic", "free-mic", "tutorial-mic"]) {
+for (const id of ["mic", "free-mic", "tutorial-mic", "tune-mic"]) {
   $(id).addEventListener("click", (event) => {
     if (!eatMicClick) return;
     eatMicClick = false;
@@ -3208,7 +3748,7 @@ for (const id of ["mic", "free-mic", "tutorial-mic"]) {
   $(id).addEventListener("click", () => toggleMic());
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && (song || micOn || freeRunning || tutorialOn)) keepAwake();
+  if (document.visibilityState === "visible" && (song || micOn || freeRunning || tutorialOn || tuneOn)) keepAwake();
 });
 window.addEventListener("resize", resize);
 
@@ -3216,6 +3756,7 @@ mountHoles($("title-flute"));
 mountHoles($("play-flute"));
 mountHoles($("free-flute"));
 mountHoles($("tutorial-flute"));
+mountHoles($("tune-flute"));
 paintFlute($("title-flute"), 0, 0, false);
 paintAlbum();
 function buildLabel() {
@@ -3560,6 +4101,11 @@ $("pick-flutes").addEventListener("click", () => showScreen("screen-flutes"));
 $("pick-free").addEventListener("click", () => startFree());
 $("select-back").addEventListener("click", () => showScreen("screen-map"));
 $("flutes-back").addEventListener("click", () => showScreen("screen-map"));
+$("tune-back").addEventListener("click", closeTune);
+$("tune-next").addEventListener("click", advanceTune);
+$("tune-prev").addEventListener("click", retreatTune);
+$("tune-use").addEventListener("click", applyTuneTakes);
+$("tune-chart-btn").addEventListener("click", restoreTuneChart);
 $("tutorial-back").addEventListener("click", () => {
   leaveTutorial();
   showScreen("screen-map");
@@ -3576,7 +4122,7 @@ $("tutorial-next").addEventListener("click", () => {
 
 function paintDronePill() {
   const pill = $("drone-pill");
-  if (pill) pill.textContent = `Drone · ${currentFlute().name}`;
+  if (pill) pill.textContent = `Drone · ${spellHz(currentFlute().drone).name}`;
 }
 
 function selectFlute(id) {
@@ -3590,11 +4136,19 @@ function selectFlute(id) {
   tuneDroneVoice();
   applyFluteArt();
   paintFluteScreen();
+  if (tuneOn) {
+    tuneFluteId = fluteId;
+    tuneTakes = [];
+    tuneIndex = 0;
+    tunePhase = "ask";
+    tuneApplied = false;
+    paintTuneAsk();
+  }
 }
 
 function applyFluteArt() {
   const src = currentFlute().art;
-  for (const id of ["title-flute", "play-flute", "free-flute", "tutorial-flute"]) {
+  for (const id of ["title-flute", "play-flute", "free-flute", "tutorial-flute", "tune-flute"]) {
     const img = document.querySelector(`#${id} img`);
     if (img && img.getAttribute("src") !== src) img.src = src;
   }
@@ -3620,10 +4174,17 @@ function paintFluteScreen() {
   eye.className = "eyebrow";
   eye.textContent = "In hand";
   const heading = document.createElement("h2");
-  heading.textContent = flute.title;
+  const sounding = spellHz(flute.drone).name;
+  heading.textContent = sounding === flute.name ? flute.title : `${sounding} drone`;
   const line = document.createElement("p");
   line.textContent = flute.line;
-  copy.append(eye, heading, line);
+  const tune = document.createElement("button");
+  tune.id = "flute-tune-open";
+  tune.type = "button";
+  tune.className = "solid tune-open";
+  tune.textContent = "Tune";
+  tune.addEventListener("click", openTune);
+  copy.append(eye, heading, line, tune);
   hero.replaceChildren(img, copy);
 
   const caseEl = $("flute-case");

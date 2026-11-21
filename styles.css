@@ -103,7 +103,7 @@ button:focus-visible, .file-btn:focus-visible {
   min-height: 100%;
 }
 
-#screen-play, #screen-free, #screen-tutorial {
+#screen-play, #screen-free, #screen-tutorial, #screen-tune {
   position: fixed;
   top: 0;
   left: 0;
@@ -662,6 +662,54 @@ h1 {
   text-transform: uppercase;
   color: var(--gold);
 }
+.tune-open { margin-top: 22px; }
+#tune-heard,
+#tune-chart {
+  margin-top: 12px;
+  min-height: 1.45em;
+}
+#tune-heard.kept { color: var(--gold); }
+#tune-heard.warn { color: var(--clay); }
+.tune-review {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: auto;
+  padding: 18px 28px 24px 22px;
+}
+.tune-review h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(40px, 6vw, 64px);
+  line-height: 0.92;
+}
+.tune-review .tune-lead {
+  max-width: 52ch;
+  margin: 0 0 8px;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--cream-dim);
+}
+.tune-review article {
+  padding: 14px 0;
+  border-top: 1px solid rgba(244, 236, 223, 0.16);
+}
+.tune-review b {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 28px;
+  color: var(--cream);
+}
+.tune-review p {
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--cream-dim);
+}
+.tune-review p.warn { color: var(--clay); }
 .feature {
   margin: 0 0 8px;
   border-color: rgba(240, 195, 106, 0.55);
@@ -736,7 +784,7 @@ h1 {
   filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.55));
 }
 .flute-wrap img { width: 100%; height: 100%; display: block; }
-#play-flute, #free-flute, #tutorial-flute {
+#play-flute, #free-flute, #tutorial-flute, #tune-flute {
   position: absolute;
   top: 0;
   left: 0;
@@ -751,7 +799,7 @@ h1 {
   z-index: 1;
   pointer-events: none;
 }
-#play-flute .flute-body, #free-flute .flute-body, #tutorial-flute .flute-body {
+#play-flute .flute-body, #free-flute .flute-body, #tutorial-flute .flute-body, #tune-flute .flute-body {
   position: relative;
   width: 140px;
   height: auto;
@@ -792,7 +840,8 @@ h1 {
 }
 .holes i.covered { background: rgba(18, 10, 6, 0.62); }
 .holes i.wrong { background: rgba(170, 48, 36, 0.55); border-color: #d15d4c; box-shadow: none; }
-#tutorial-flute .holes i.target {
+#tutorial-flute .holes i.target,
+#tune-flute .holes i.target {
   width: 22%;
   background: #140e0a;
   border: 2px solid #f4ecdf;
@@ -804,7 +853,8 @@ h1 {
   100% { box-shadow: 0 0 0 3px #f4ecdf, 0 0 0 16px rgba(244, 236, 223, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  #tutorial-flute .holes i.target {
+  #tutorial-flute .holes i.target,
+  #tune-flute .holes i.target {
     animation: none;
     box-shadow: 0 0 0 3px #f4ecdf, 0 0 0 10px rgba(244, 236, 223, 0.55);
   }
@@ -818,7 +868,7 @@ h1 {
 }
 
 .hud-title { flex: 1; min-width: 0; }
-#song-name, #song-blurb, #free-title, #free-blurb, #tutorial-title, #tutorial-blurb {
+#song-name, #song-blurb, #free-title, #free-blurb, #tutorial-title, #tutorial-blurb, #tune-title, #tune-blurb {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1066,7 +1116,7 @@ h1 {
   z-index: 2;
 }
 
-#play-flute, #free-flute, #tutorial-flute {
+#play-flute, #free-flute, #tutorial-flute, #tune-flute {
   position: absolute;
   top: 0;
   left: 0;
@@ -1080,7 +1130,7 @@ h1 {
   z-index: 1;
   pointer-events: none;
 }
-#play-flute .flute-body, #free-flute .flute-body, #tutorial-flute .flute-body {
+#play-flute .flute-body, #free-flute .flute-body, #tutorial-flute .flute-body, #tune-flute .flute-body {
   position: relative;
   width: 140px;
   transform: none;
@@ -1136,15 +1186,16 @@ h1 {
 }
 #tutorial-heard.right { color: var(--gold); }
 .tuner { margin-top: 22px; max-width: 460px; }
-#tutorial-way {
+.meter-way {
   font-family: var(--serif);
   font-weight: 500;
   font-size: clamp(48px, 8vw, 80px);
   line-height: 0.9;
   color: var(--cream);
 }
-.tuner.in #tutorial-way { color: var(--gold); }
-#tutorial-cents {
+.tuner.in .meter-way { color: var(--gold); }
+.tuner.off .meter-way { color: var(--clay); }
+.meter-cents {
   min-height: 1.3em;
   margin-top: 8px;
   font-family: var(--sans);
@@ -1152,8 +1203,9 @@ h1 {
   font-weight: 560;
   color: var(--cream);
 }
-.tuner.in #tutorial-cents { color: var(--gold); }
-.tuner.idle #tutorial-cents { color: var(--cream-dim); }
+.tuner.in .meter-cents { color: var(--gold); }
+.tuner.idle .meter-cents,
+.tuner.off .meter-cents { color: var(--cream-dim); }
 .tuner-track {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1185,7 +1237,7 @@ h1 {
   transform: translateX(-50%);
   background: var(--gold);
 }
-#tutorial-needle {
+.meter-needle {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1196,8 +1248,9 @@ h1 {
   background: var(--cream);
   box-shadow: 0 0 0 4px rgba(7, 6, 5, 0.65);
 }
-.tuner.in #tutorial-needle { background: var(--gold); }
-.tuner.idle #tutorial-needle { opacity: 0.4; }
+.tuner.in .meter-needle { background: var(--gold); }
+.tuner.off .meter-needle { background: var(--clay); }
+.tuner.idle .meter-needle { opacity: 0.4; }
 .play-bar.tutorial-bar {
   display: flex;
   justify-content: flex-end;
@@ -1759,6 +1812,7 @@ h1 {
 }
 #free-note.warn { color: var(--cream-dim); text-transform: none; letter-spacing: 0.02em; background: transparent; border-color: var(--line); }
 .text-btn:disabled,
+.solid:disabled,
 .panel-actions button:disabled { opacity: 0.4; cursor: default; }
 .metro-card > .text-btn { align-self: stretch; }
 .metro-hint {
@@ -1884,6 +1938,8 @@ h1 {
   .flute-open h2 { font-size: clamp(48px, 14vw, 68px); }
   .flute-case { grid-template-columns: repeat(2, 1fr); gap: 16px 12px; }
   .flute-case img { height: 120px; }
+  .tune-review { padding: 12px 16px 20px; }
+  .tune-review b { font-size: 22px; }
   .hud { padding-right: 58px; padding-left: 12px; }
   .title-screen h1 { font-size: clamp(88px, 24vw, 112px); }
   .title-screen .title-stage { height: min(52svh, 500px); }
@@ -1899,19 +1955,19 @@ h1 {
     gap: 10px;
     padding: calc(8px + env(safe-area-inset-top)) 58px 0 12px;
   }
-  #back, #free-back, #tutorial-back { flex: none; }
+  #back, #free-back, #tutorial-back, #tune-back { flex: none; }
   .hud-stats { gap: 10px; }
   .hud-stats > div { min-width: 2.8rem; }
   .hud-stats b { font-size: 20px; }
   .call { left: 62%; top: 30%; }
   .call-badge { min-width: 148px; padding: 10px 18px 9px; }
   .call b { font-size: 32px; }
-  #song-name, #free-title, #tutorial-title { font-size: 18px; }
+  #song-name, #free-title, #tutorial-title, #tune-title { font-size: 18px; }
   .tutorial-copy { margin-left: 148px; margin-right: 12px; padding-top: 2vh; }
   .tutorial-copy h2 { font-size: clamp(40px, 10vw, 64px); }
   .tutorial-copy p { font-size: 16px; }
-  #tutorial-way { font-size: clamp(40px, 11vw, 64px); }
-  #tutorial-cents { font-size: 22px; }
+  .meter-way { font-size: clamp(40px, 11vw, 64px); }
+  .meter-cents { font-size: 22px; }
   .tuner-track span { font-size: 16px; }
   .bpm-read b { font-size: 18px; }
   .stage { margin: 8px 10px 0; }
