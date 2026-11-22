@@ -1119,11 +1119,29 @@ function nearHz(a, b, cents = 45) {
   return a > 0 && b > 0 && Math.abs(1200 * Math.log2(a / b)) < cents;
 }
 
-function hzWords(hz, secondHz) {
-  if (!(hz > 0)) return "Not recorded";
+function noteOf(hz) {
+  if (!(hz > 0)) return "";
+  return spellHz(hz).name;
+}
+
+function hzPair(hz, secondHz) {
+  if (!(hz > 0)) return "";
   let text = `${Math.round(hz)} Hz`;
   if (secondHz > 0) text += ` · and ${Math.round(secondHz)} Hz`;
   return text;
+}
+
+function hzWords(hz, secondHz) {
+  if (!(hz > 0)) return "Not recorded";
+  let text = `${hzPair(hz)} · ${noteOf(hz)}`;
+  if (secondHz > 0) text += ` · and ${hzPair(secondHz)} · ${noteOf(secondHz)}`;
+  return text;
+}
+
+function stepTitle(step) {
+  if (!step || step.kind === "drone") return "Drone";
+  if (step.kind === "both") return `${step.name} and the drone`;
+  return step.name;
 }
 
 function paintTuneFlute(step) {
@@ -1132,18 +1150,15 @@ function paintTuneFlute(step) {
   paintFlute($("tune-flute"), null, target, drone);
 }
 
-function recordedLine(take) {
-  if (!take?.hz) return "";
-  return `Recorded · ${hzWords(take.hz, take.secondHz)}`;
-}
-
 function paintTuneAsk() {
   const step = tunePlan()[tuneIndex];
   const count = tunePlan().length;
   $("tune-title").textContent = "Tune";
   $("tune-blurb").textContent = `${currentFlute().name} · ${tuneIndex + 1} / ${count}`;
-  $("tune-ask").textContent = step.ask;
-  $("tune-name").textContent = step.name;
+  $("tune-ask").textContent = step.kind === "drone" ? "Drone only" : step.kind === "both" ? "Note and drone" : "Note only";
+  $("tune-ask").classList.toggle("with-drone", step.kind !== "note");
+  $("tune-name").textContent = stepTitle(step);
+  $("tune-name").classList.toggle("with-drone", step.kind !== "note");
   $("tune-hint").textContent = step.hint;
   $("tune-chart").textContent = "";
   $("tune-prev").classList.toggle("hidden", tuneIndex === 0);
@@ -1300,8 +1315,8 @@ function tuneFrame() {
   if (!(hz > 0)) {
     const take = tuneTakes[tuneIndex];
     if (take?.hz) {
-      paintTuneReadout(null, `${Math.round(take.hz)} Hz`, take.secondHz ? `and ${Math.round(take.secondHz)} Hz` : "");
-      heard.textContent = recordedLine(take);
+      paintTuneReadout(null, take.secondHz ? `${noteOf(take.hz)} · ${noteOf(take.secondHz)}` : noteOf(take.hz), hzPair(take.hz, take.secondHz));
+      heard.textContent = "Recorded";
       heard.classList.add("kept");
       heard.classList.remove("warn");
     } else {
@@ -1311,10 +1326,10 @@ function tuneFrame() {
     }
   } else {
     const take = recordTune(hz);
-    paintTuneReadout(null, `${Math.round(take.hz)} Hz`, take.secondHz ? `and ${Math.round(take.secondHz)} Hz` : "");
+    paintTuneReadout(null, take.secondHz ? `${noteOf(take.hz)} · ${noteOf(take.secondHz)}` : noteOf(take.hz), hzPair(take.hz, take.secondHz));
     $("tune-meter").classList.remove("idle");
     $("tune-meter").classList.add("in");
-    heard.textContent = recordedLine(take);
+    heard.textContent = "Recorded";
     heard.classList.add("kept");
     heard.classList.remove("warn");
   }
@@ -1341,8 +1356,8 @@ function paintTuneReview() {
   const lead = document.createElement("p");
   lead.className = "tune-lead";
   lead.textContent = any
-    ? "The hertz that were played. No note names are assumed."
-    : "Play each fingering, then the same fingering with the drone. A steady pitch is recorded.";
+    ? "What was played. The note beside each pitch is the nearest name."
+    : "Play each fingering alone, then the same fingering with the drone.";
   const heading = document.createElement("h2");
   heading.textContent = currentFlute().title;
   const rows = [heading, lead];
@@ -1350,7 +1365,7 @@ function paintTuneReview() {
     if (step.kind === "both") return;
     const article = document.createElement("article");
     const title = document.createElement("b");
-    title.textContent = step.name;
+    title.textContent = step.kind === "note" ? step.name : stepTitle(step);
     const lines = [];
     if (step.kind === "drone") lines.push(tuneLine(tuneTakes[i]?.hz ? hzWords(tuneTakes[i].hz, tuneTakes[i].secondHz) : "Not recorded"));
     else {
@@ -1363,6 +1378,9 @@ function paintTuneReview() {
     rows.push(article);
   });
   $("tune-review").replaceChildren(...rows);
+  const exp = $("tune-use");
+  exp.textContent = "Export";
+  exp.disabled = !any;
 }
 
 function showTuneReview() {
@@ -1374,7 +1392,7 @@ function showTuneReview() {
   $("tune-review").classList.remove("hidden");
   $("tune-mic").classList.add("hidden");
   $("tune-prev").classList.remove("hidden");
-  $("tune-use").classList.add("hidden");
+  $("tune-use").classList.remove("hidden");
   $("tune-chart-btn").classList.add("hidden");
   $("tune-next").textContent = "Done";
   paintTuneReview();
@@ -1439,8 +1457,58 @@ function retreatTune() {
   paintTuneAsk();
 }
 
-function applyTuneTakes() {
-  paintTuneReview();
+function tuneReport() {
+  const flute = currentFlute();
+  const plan = tunePlan();
+  const takes = plan.map((step, i) => {
+    const take = tuneTakes[i];
+    return {
+      step: i + 1,
+      fingering: stepTitle(step),
+      drone: step.kind !== "note",
+      hz: take?.hz || null,
+      note: take?.hz ? noteOf(take.hz) : null,
+      secondHz: take?.secondHz || null,
+      secondNote: take?.secondHz ? noteOf(take.secondHz) : null,
+    };
+  });
+  const lines = [flute.title, ""];
+  for (const row of takes) {
+    const heard = row.hz ? `${Math.round(row.hz)} Hz · ${row.note}` : "not recorded";
+    const extra = row.secondHz ? ` · and ${Math.round(row.secondHz)} Hz · ${row.secondNote}` : "";
+    lines.push(`${row.fingering}: ${heard}${extra}`);
+  }
+  return {
+    payload: { flute: flute.id, title: flute.title, recordedAt: new Date().toISOString(), takes },
+    text: lines.join("\n"),
+  };
+}
+
+async function exportTune() {
+  const flute = currentFlute();
+  const report = tuneReport();
+  const blob = new Blob([JSON.stringify(report.payload, null, 2)], { type: "application/json" });
+  const file = new File([blob], `${flute.id}-tune.json`, { type: "application/json" });
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `${flute.title} tuning`, text: report.text });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: `${flute.title} tuning`, text: report.text });
+      return;
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function restoreTuneChart() {
@@ -4050,7 +4118,7 @@ $("flutes-back").addEventListener("click", () => showScreen("screen-map"));
 $("tune-back").addEventListener("click", closeTune);
 $("tune-next").addEventListener("click", advanceTune);
 $("tune-prev").addEventListener("click", retreatTune);
-$("tune-use").addEventListener("click", applyTuneTakes);
+$("tune-use").addEventListener("click", () => exportTune());
 $("tune-chart-btn").addEventListener("click", restoreTuneChart);
 $("tutorial-back").addEventListener("click", () => {
   leaveTutorial();

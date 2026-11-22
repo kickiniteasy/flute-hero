@@ -663,6 +663,10 @@ h1 {
   color: var(--gold);
 }
 .tune-open { margin-top: 22px; }
+#tune-ask { font-size: 18px; letter-spacing: 0.14em; }
+#tune-ask.with-drone { color: var(--gold); }
+#tune-name { font-size: clamp(36px, 5.4vw, 72px); }
+#tune-name.with-drone { color: var(--gold); }
 #tune-heard,
 #tune-chart {
   margin-top: 12px;
