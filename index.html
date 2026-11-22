@@ -6,7 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Flute Hero</title>
-    <link rel="stylesheet" href="styles.css?v=79" />
+    <link rel="stylesheet" href="styles.css?v=82" />
   </head>
   <body>
     <section id="screen-title" class="screen title-screen">
@@ -473,6 +473,13 @@
               <small id="ear-flute-line">In hand. The ears listen for this flute.</small>
             </span>
           </div>
+          <button class="menu-nav ear" type="button" data-ear="scale" aria-pressed="false">
+            <span class="menu-copy">
+              <b>Scale</b>
+              <small>The new ear. The scale of this flute, including a tuning when there is one. The drone is set aside, and its harmonics do not take the fingering.</small>
+            </span>
+            <span class="ear-using">Using</span>
+          </button>
           <button class="menu-nav ear" type="button" data-ear="bands" aria-pressed="false">
             <span class="menu-copy">
               <b>Bands</b>
@@ -497,7 +504,7 @@
           <button class="menu-nav ear" type="button" data-ear="held" aria-pressed="false">
             <span class="menu-copy">
               <b>Held</b>
-              <small>The latest ear. The drone stays with the note, and a harmonic of the drone does not take the fingering.</small>
+              <small>The drone stays with the note, and a harmonic of the drone does not take the fingering.</small>
             </span>
             <span class="ear-using">Using</span>
           </button>
@@ -616,6 +623,6 @@
       </div>
     </dialog>
 
-    <script src="game.js?v=79"></script>
+    <script src="game.js?v=82"></script>
   </body>
 </html>

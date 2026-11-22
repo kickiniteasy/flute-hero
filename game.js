@@ -406,6 +406,7 @@ const EARS = {
   bands: { id: "bands", name: "Bands", menu: "A window around each note." },
   peaks: { id: "peaks", name: "Peaks", menu: "The drone only when a second barrel is there." },
   peaks2: { id: "peaks2", name: "Peaks v2", menu: "A held note stays. The drone is decided beside it." },
+  scale: { id: "scale", name: "Scale", menu: "The scale of this flute. The drone is set aside." },
   held: { id: "held", name: "Held", menu: "The drone stays with the note." },
   yin: { id: "yin", name: "YIN", menu: "One pitch from the wave, the way a tuner library does." },
   mcleod: { id: "mcleod", name: "McLeod", menu: "One pitch from the wave, the way Aubio does." },
@@ -415,7 +416,7 @@ function earFollowsPitch() {
 }
 function earSmoothing() {
   if (earId === "yin" || earId === "mcleod") return 0;
-  if (earId === "bands" || earId === "peaks2") return 0.45;
+  if (earId === "bands" || earId === "peaks2" || earId === "scale") return 0.45;
   return 0.25;
 }
 let earId = localStorage.getItem(EAR_KEY);
@@ -2563,7 +2564,110 @@ function hearWave(hz, freq, sampleRate, fftSize) {
   };
 }
 
+function scaleTargets(flute) {
+  const takes = loadTuneTakes(flute.id);
+  const notes = flute.notes.map((hz, covers) => ({ covers, hz, name: flute.names[covers] }));
+  let drone = flute.drone;
+  if (takes[0]?.hz > 0 && Math.abs(1200 * Math.log2(takes[0].hz / flute.drone)) <= 150) drone = takes[0].hz;
+  notes.forEach((note) => {
+    const alone = takes[1 + note.covers * 2];
+    if (!(alone?.hz > 0)) return;
+    if (Math.abs(1200 * Math.log2(alone.hz / note.hz)) > 150) return;
+    note.hz = alone.hz;
+  });
+  return { drone, notes };
+}
+
+function spectralPeaks(freq, sampleRate, fftSize, loHz, hiHz) {
+  const binHz = sampleRate / fftSize;
+  const lo = Math.max(1, Math.floor(loHz / binHz));
+  const hi = Math.min(freq.length - 2, Math.ceil(hiHz / binHz));
+  const peaks = [];
+  for (let i = lo; i < hi; i++) {
+    if (freq[i] <= freq[i - 1] || freq[i] < freq[i + 1] || freq[i] < -62) continue;
+    const left = freq[i - 1];
+    const right = freq[i + 1];
+    const denom = left - 2 * freq[i] + right;
+    const delta = denom === 0 ? 0 : (0.5 * (left - right)) / denom;
+    peaks.push({ hz: (i + delta) * binHz, db: freq[i] });
+  }
+  return collapsePeaks(peaks);
+}
+
+function chooseScale(peaks, notes, droneHz, band) {
+  const inBand = peaks.filter((peak) => peak.hz >= band.lo && peak.hz <= band.hi);
+  const dronePeak = droneHz ? inBand.filter((peak) => nearHz(peak.hz, droneHz, 80)).sort((a, b) => b.db - a.db)[0] : null;
+  const melodyPeaks = inBand.filter((peak) => {
+    if (dronePeak && nearHz(peak.hz, dronePeak.hz, 55)) return false;
+    if (dronePeak && integerHarmonic(peak.hz, dronePeak.hz)) return false;
+    return true;
+  });
+  const named = [];
+  for (const peak of melodyPeaks) {
+    let best = null;
+    let cents = Infinity;
+    for (const note of notes) {
+      if (note.covers === 6) continue;
+      const off = Math.abs(1200 * Math.log2(peak.hz / note.hz));
+      if (off < cents) {
+        cents = off;
+        best = note;
+      }
+    }
+    if (best && cents <= 65) named.push({ peak, note: best, cents });
+  }
+  const heard = (covers, hz, db, drone) => ({
+    covers,
+    hz,
+    db,
+    drone,
+    droneHz: dronePeak ? dronePeak.hz : 0,
+    droneDb: dronePeak ? dronePeak.db : -120,
+  });
+  if (named.length) {
+    const loud = Math.max(...named.map((item) => item.peak.db));
+    const usable = named.filter((item) => item.peak.db >= loud - 20).sort((a, b) => b.peak.db - a.peak.db);
+    const melody = usable[0];
+    return heard(melody.note.covers, melody.peak.hz, melody.peak.db, Boolean(dronePeak));
+  }
+  const open = notes.find((note) => note.covers === 0);
+  const fundamental = dronePeak ? dronePeak.hz : 0;
+  if (fundamental && open) {
+    const third = peaks.filter((peak) => nearHz(peak.hz, fundamental * 3, 50)).sort((a, b) => b.db - a.db)[0];
+    const sixth = peaks.filter((peak) => nearHz(peak.hz, fundamental * 6, 50)).sort((a, b) => b.db - a.db)[0];
+    const octave = inBand.find((peak) => integerHarmonic(peak.hz, fundamental) && nearHz(peak.hz, open.hz, 65));
+    if (octave && sixth && (!third || sixth.db > third.db + 1)) return heard(0, octave.hz, octave.db, true);
+  }
+  if (dronePeak) return heard(6, dronePeak.hz, dronePeak.db, false);
+  return null;
+}
+
+function hearScale(freq, sampleRate, fftSize) {
+  const flute = currentFlute();
+  const { drone, notes } = scaleTargets(flute);
+  const span = notes.map((note) => note.hz);
+  if (drone > 0) span.push(drone);
+  const slack = 2 ** (2 / 12);
+  const band = { lo: Math.min(...span) / slack, hi: Math.max(...span) * slack };
+  const peaks = spectralPeaks(freq, sampleRate, fftSize, Math.max(50, band.lo / 2), band.hi * 6);
+  const chosen = chooseScale(peaks, notes, drone, band);
+  if (!chosen) return { covers: null, drone: false, label: "", melodyDb: -120, droneDb: -120, detail: "No pitch" };
+  let droneOn = chosen.drone;
+  if (chosen.covers === 6) droneOn = secondBarrel(freq, sampleRate, fftSize, toneAt(freq, sampleRate, fftSize, chosen.hz));
+  const name = notes.find((note) => note.covers === chosen.covers).name;
+  const droneBit = chosen.droneHz ? `drone ${Math.round(chosen.droneHz)} Hz` : "drone off";
+  return {
+    covers: chosen.covers,
+    drone: droneOn,
+    label: LANES[chosen.covers],
+    melodyDb: chosen.db,
+    droneDb: chosen.droneDb,
+    detail: `${name} ${Math.round(chosen.hz)} Hz · ${droneBit}`,
+  };
+}
+
 function hearFlute(freq, sampleRate, fftSize, waveHz) {
+  if (earId === "scale") return hearScale(freq, sampleRate, fftSize);
   if (earId === "bands") return hearBands(freq, sampleRate, fftSize);
   if (earId === "held") return hearHeld(freq, sampleRate, fftSize);
   if (earId === "peaks2") return hearPeaks2(freq, sampleRate, fftSize);
