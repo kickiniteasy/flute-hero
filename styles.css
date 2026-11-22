@@ -669,6 +669,8 @@ h1 {
   min-height: 1.45em;
 }
 #tune-heard.kept { color: var(--gold); }
+#tune-chart:empty { display: none; }
+#tune-meter .tuner-track { display: none; }
 #tune-heard.warn { color: var(--clay); }
 .tune-review {
   position: absolute;
