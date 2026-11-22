@@ -1100,8 +1100,12 @@ function loadTuneTakes(id) {
   const rows = readTakeStore()[id];
   if (!Array.isArray(rows)) return [];
   return rows.map((row) => {
-    if (!row || !(row.hz > 0)) return null;
-    return { hz: row.hz, secondHz: row.secondHz > 0 ? row.secondHz : 0 };
+    if (!row || (!(row.hz > 0) && !(row.droneHz > 0))) return null;
+    return {
+      hz: row.hz > 0 ? row.hz : 0,
+      secondHz: row.secondHz > 0 ? row.secondHz : 0,
+      droneHz: row.droneHz > 0 ? row.droneHz : 0,
+    };
   });
 }
 
@@ -1124,17 +1128,32 @@ function noteOf(hz) {
   return spellHz(hz).name;
 }
 
-function hzPair(hz, secondHz) {
+function tuneBand() {
+  const flute = currentFlute();
+  const all = [flute.drone, ...flute.notes].filter((hz) => hz > 0);
+  const slack = 2 ** (2 / 12);
+  return { lo: Math.min(...all) / slack, hi: Math.max(...all) * slack };
+}
+
+function integerHarmonic(hz, fundamental) {
+  if (!(hz > 0) || !(fundamental > 0) || hz < fundamental * 1.4) return false;
+  const n = Math.round(hz / fundamental);
+  if (n < 2 || n > 6) return false;
+  return nearHz(hz, fundamental * n, 60);
+}
+
+function voiceWords(hz) {
   if (!(hz > 0)) return "";
-  let text = `${Math.round(hz)} Hz`;
-  if (secondHz > 0) text += ` · and ${Math.round(secondHz)} Hz`;
-  return text;
+  return `${Math.round(hz)} Hz · ${noteOf(hz)}`;
 }
 
 function hzWords(hz, secondHz) {
-  if (!(hz > 0)) return "Not recorded";
-  let text = `${hzPair(hz)} · ${noteOf(hz)}`;
-  if (secondHz > 0) text += ` · and ${hzPair(secondHz)} · ${noteOf(secondHz)}`;
+  const band = tuneBand();
+  if (!(hz >= band.lo && hz <= band.hi)) return "not recorded";
+  const extra = secondHz > 0 && !integerHarmonic(secondHz, hz) ? secondHz : 0;
+  const inBand = extra >= band.lo && extra <= band.hi ? extra : 0;
+  let text = `${voiceWords(hz)}`;
+  if (inBand) text += ` · and ${voiceWords(inBand)}`;
   return text;
 }
 
@@ -1195,34 +1214,48 @@ function paintTuneReadout(cents, headline, sub, mode) {
   tuner.classList.add(mode);
 }
 
-function takeTuneSample() {
-  if (!(micHz > 0)) {
-    tuneSamples = [];
-    return 0;
+function collapsePeaks(peaks) {
+  const sorted = peaks.slice().sort((a, b) => b.db - a.db);
+  const kept = [];
+  for (const peak of sorted) {
+    if (kept.some((other) => nearHz(other.hz, peak.hz, 40))) continue;
+    kept.push(peak);
   }
-  tuneSamples.push(micHz);
-  if (tuneSamples.length > 12) tuneSamples.shift();
-  if (tuneSamples.length < 6) return 0;
-  const sorted = tuneSamples.slice().sort((a, b) => a - b);
-  const spread = Math.abs(1200 * Math.log2(sorted[sorted.length - 1] / sorted[0]));
-  if (spread > 30) return 0;
-  return sorted[Math.floor(sorted.length / 2)];
+  return kept;
 }
 
-function harmonicOf(hz, other) {
-  const cents = Math.abs(1200 * Math.log2(hz / other));
-  return Math.abs(cents - 1200) < 60 || Math.abs(cents - 1902) < 50;
+function lowestVoice(peaks) {
+  if (!peaks.length) return 0;
+  const loud = Math.max(...peaks.map((peak) => peak.db));
+  const usable = peaks.filter((peak) => peak.db >= loud - 24).sort((a, b) => a.hz - b.hz);
+  return usable[0].hz;
 }
 
-function tuneSecond(leadHz) {
-  if (!micAnalyser || !(leadHz > 0) || !audioCtx) return 0;
+function assignTuneVoices(bandPeaks, kind, droneRef) {
+  const peaks = collapsePeaks(bandPeaks);
+  if (kind !== "both") return { hz: lowestVoice(peaks), droneHz: 0 };
+  const dronePeak = peaks.filter((peak) => nearHz(peak.hz, droneRef, 80)).sort((a, b) => b.db - a.db)[0];
+  const melody = peaks.filter((peak) => {
+    if (dronePeak && peak === dronePeak) return false;
+    if (nearHz(peak.hz, droneRef, 80)) return false;
+    if (integerHarmonic(peak.hz, droneRef)) return false;
+    if (dronePeak && integerHarmonic(peak.hz, dronePeak.hz)) return false;
+    return true;
+  });
+  return { hz: lowestVoice(melody), droneHz: dronePeak ? dronePeak.hz : 0 };
+}
+
+function readTunePeaks() {
+  const empty = { band: [], above: [], below: [] };
+  if (!micAnalyser || !audioCtx) return empty;
   if (!tuneFreq || tuneFreq.length !== micAnalyser.frequencyBinCount) {
     tuneFreq = new Float32Array(micAnalyser.frequencyBinCount);
   }
   micAnalyser.getFloatFrequencyData(tuneFreq);
   const binHz = audioCtx.sampleRate / micAnalyser.fftSize;
+  const band = tuneBand();
   const lo = Math.max(1, Math.floor(60 / binHz));
-  const hi = Math.min(tuneFreq.length - 2, Math.ceil(4000 / binHz));
+  const hi = Math.min(tuneFreq.length - 2, Math.ceil((band.hi * 4) / binHz));
   const peaks = [];
   for (let i = lo; i < hi; i++) {
     if (tuneFreq[i] <= tuneFreq[i - 1] || tuneFreq[i] < tuneFreq[i + 1] || tuneFreq[i] < -58) continue;
@@ -1232,19 +1265,48 @@ function tuneSecond(leadHz) {
     const delta = denom === 0 ? 0 : (0.5 * (left - right)) / denom;
     peaks.push({ hz: (i + delta) * binHz, db: tuneFreq[i] });
   }
-  peaks.sort((a, b) => b.db - a.db);
-  let leadDb = -120;
-  for (const peak of peaks) {
-    if (nearHz(peak.hz, leadHz, 50)) leadDb = Math.max(leadDb, peak.db);
-  }
-  if (leadDb < -100 && peaks.length) leadDb = peaks[0].db;
-  for (const peak of peaks) {
-    if (nearHz(peak.hz, leadHz, 50)) continue;
-    if (harmonicOf(peak.hz, leadHz)) continue;
-    if (peak.db < leadDb - 18) continue;
-    return peak.hz;
-  }
-  return 0;
+  return {
+    band: peaks.filter((peak) => peak.hz >= band.lo && peak.hz <= band.hi),
+    above: peaks.filter((peak) => peak.hz > band.hi),
+    below: peaks.filter((peak) => peak.hz < band.lo),
+  };
+}
+
+function tuneStray(parts) {
+  if (parts.band.length) return "";
+  const above = parts.above.reduce((best, peak) => Math.max(best, peak.db), -120);
+  const below = parts.below.reduce((best, peak) => Math.max(best, peak.db), -120);
+  if (above > -50 && above >= below) return "high";
+  if (below > -50) return "low";
+  return "";
+}
+
+function hearTune(kind) {
+  const parts = readTunePeaks();
+  const droneRef = tuneTakes[0]?.hz || currentFlute().drone;
+  return { ...assignTuneVoices(parts.band, kind, droneRef), stray: tuneStray(parts) };
+}
+
+function steadyHz(values) {
+  const present = values.filter((hz) => hz > 0);
+  if (present.length < 5) return 0;
+  const sorted = present.slice().sort((a, b) => a - b);
+  if (Math.abs(1200 * Math.log2(sorted[sorted.length - 1] / sorted[0])) > 35) return 0;
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function sampleTune(kind) {
+  const heard = hearTune(kind);
+  tuneSamples.push(heard);
+  if (tuneSamples.length > 10) tuneSamples.shift();
+  const recent = tuneSamples.slice(-6);
+  const high = recent.filter((sample) => sample.stray === "high").length;
+  const low = recent.filter((sample) => sample.stray === "low").length;
+  return {
+    hz: steadyHz(tuneSamples.map((sample) => sample.hz)),
+    droneHz: steadyHz(tuneSamples.map((sample) => sample.droneHz)),
+    stray: high >= 4 ? "high" : low >= 4 ? "low" : "",
+  };
 }
 
 const TUNE_TAU = 2048;
@@ -1252,8 +1314,9 @@ const tuneDiff = new Float32Array(TUNE_TAU + 1);
 const tuneCmnd = new Float32Array(TUNE_TAU + 1);
 
 function tunePitch(samples, sampleRate) {
-  const tauMin = Math.max(2, Math.floor(sampleRate / 4000));
-  const tauMax = Math.min(TUNE_TAU, Math.floor(samples.length / 2) - 1, Math.floor(sampleRate / 60));
+  const band = tuneBand();
+  const tauMin = Math.max(2, Math.floor(sampleRate / band.hi));
+  const tauMax = Math.min(TUNE_TAU, Math.floor(samples.length / 2) - 1, Math.floor(sampleRate / band.lo));
   if (tauMax <= tauMin) return 0;
   const span = Math.floor(samples.length / 2);
   for (let tau = 1; tau <= tauMax; tau++) {
@@ -1290,48 +1353,97 @@ function tunePitch(samples, sampleRate) {
     if (bestV > 0.45) return 0;
     tau = best;
   }
-  return sampleRate / periodAt(tuneCmnd, tau, tauMax);
+  const hz = sampleRate / periodAt(tuneCmnd, tau, tauMax);
+  return hz >= band.lo && hz <= band.hi ? hz : 0;
 }
 
-function recordTune(hz) {
-  const secondHz = tuneSecond(hz);
+function recordTune(heard, kind) {
   const prev = tuneTakes[tuneIndex];
-  if (prev && nearHz(prev.hz, hz, 12) && (!secondHz || nearHz(prev.secondHz, secondHz, 12))) return prev;
+  const droneHz = kind === "both" ? heard.droneHz || prev?.droneHz || 0 : 0;
+  let hz = heard.hz;
+  if (kind === "both" && !(hz > 0) && prev?.hz && nearHz(prev.droneHz, droneHz, 12)) hz = prev.hz;
+  if (!(hz > 0) && !(droneHz > 0)) return prev || null;
+  const sameHz = (!(prev?.hz > 0) && !(hz > 0)) || nearHz(prev?.hz, hz, 12);
+  const sameDrone = (!(prev?.droneHz > 0) && !(droneHz > 0)) || nearHz(prev?.droneHz, droneHz, 12);
+  if (prev && sameHz && sameDrone) return prev;
   const take = {
-    hz: Math.round(hz * 100) / 100,
-    secondHz: secondHz ? Math.round(secondHz * 100) / 100 : 0,
+    hz: hz > 0 ? Math.round(hz * 100) / 100 : 0,
+    secondHz: 0,
+    droneHz: droneHz > 0 ? Math.round(droneHz * 100) / 100 : 0,
   };
   tuneTakes[tuneIndex] = take;
   saveTuneTakes();
   return take;
 }
 
+function bothReadout(take) {
+  if (take?.hz > 0) {
+    const drone = take.droneHz > 0 ? `Drone ${Math.round(take.droneHz)} Hz` : "Drone not heard";
+    return { headline: noteOf(take.hz), sub: `Note ${Math.round(take.hz)} Hz · ${drone}` };
+  }
+  if (take?.droneHz > 0) {
+    const alone = tuneTakes[tuneIndex - 1];
+    if (alone?.hz && nearHz(alone.hz, take.droneHz, 50)) {
+      return { headline: noteOf(take.droneHz), sub: `Same as the drone · ${Math.round(take.droneHz)} Hz` };
+    }
+    if (alone?.hz && integerHarmonic(alone.hz, take.droneHz)) {
+      return { headline: noteOf(alone.hz), sub: `On the drone's octave · drone ${Math.round(take.droneHz)} Hz` };
+    }
+    return { headline: "Drone", sub: `${voiceWords(take.droneHz)} · note not heard` };
+  }
+  return null;
+}
+
+function paintLiveTune(step, take, stray) {
+  const heard = $("tune-heard");
+  const reading = step.kind === "both" ? bothReadout(take) : null;
+  if (reading) {
+    paintTuneReadout(null, reading.headline, reading.sub);
+    heard.textContent = "Recorded";
+    heard.classList.add("kept");
+    heard.classList.remove("warn");
+    return;
+  }
+  if (step.kind !== "both" && take?.hz) {
+    paintTuneReadout(null, noteOf(take.hz), `${Math.round(take.hz)} Hz`);
+    heard.textContent = "Recorded";
+    heard.classList.add("kept");
+    heard.classList.remove("warn");
+    return;
+  }
+  if (stray === "high") {
+    paintTuneReadout(null, "Too high", "");
+    heard.textContent = "That's above this flute. Ease the breath.";
+    heard.classList.remove("kept");
+    heard.classList.add("warn");
+    return;
+  }
+  if (stray === "low") {
+    paintTuneReadout(null, "Too low", "");
+    heard.textContent = "That's below this flute.";
+    heard.classList.remove("kept");
+    heard.classList.add("warn");
+    return;
+  }
+  paintTuneReadout(null, micOn ? "Listening" : "Play", "");
+  heard.textContent = micOn
+    ? step.kind === "both"
+      ? "Play the note and the drone. They are kept apart."
+      : "Play a steady pitch. It records."
+    : "The microphone is off.";
+  heard.classList.remove("kept", "warn");
+}
+
 function tuneFrame() {
   if (!tuneOn || tunePhase !== "ask") return;
   const step = tunePlan()[tuneIndex];
   paintTuneFlute(step);
-  const hz = takeTuneSample();
-  const heard = $("tune-heard");
-  if (!(hz > 0)) {
-    const take = tuneTakes[tuneIndex];
-    if (take?.hz) {
-      paintTuneReadout(null, take.secondHz ? `${noteOf(take.hz)} · ${noteOf(take.secondHz)}` : noteOf(take.hz), hzPair(take.hz, take.secondHz));
-      heard.textContent = "Recorded";
-      heard.classList.add("kept");
-      heard.classList.remove("warn");
-    } else {
-      paintTuneReadout(null, micOn ? "Listening" : "Play", "");
-      heard.textContent = micOn ? "Play a steady pitch. It records." : "The microphone is off.";
-      heard.classList.remove("kept", "warn");
-    }
-  } else {
-    const take = recordTune(hz);
-    paintTuneReadout(null, take.secondHz ? `${noteOf(take.hz)} · ${noteOf(take.secondHz)}` : noteOf(take.hz), hzPair(take.hz, take.secondHz));
+  const sample = sampleTune(step.kind);
+  const take = sample.hz > 0 || sample.droneHz > 0 ? recordTune(sample, step.kind) : tuneTakes[tuneIndex];
+  paintLiveTune(step, take, sample.stray);
+  if (take?.hz || take?.droneHz) {
     $("tune-meter").classList.remove("idle");
     $("tune-meter").classList.add("in");
-    heard.textContent = "Recorded";
-    heard.classList.add("kept");
-    heard.classList.remove("warn");
   }
   tuneRaf = requestAnimationFrame(tuneFrame);
 }
@@ -1372,7 +1484,7 @@ function paintTuneReview() {
       const alone = tuneTakes[i];
       const pair = tuneTakes[i + 1];
       lines.push(tuneLine(alone?.hz ? `Alone · ${hzWords(alone.hz, alone.secondHz)}` : "Alone · not recorded"));
-      lines.push(tuneLine(pair?.hz ? `With the drone · ${hzWords(pair.hz, pair.secondHz)}` : "With the drone · not recorded"));
+      lines.push(tuneLine(bothLine(pair, alone)));
     }
     article.append(title, ...lines);
     rows.push(article);
@@ -1457,6 +1569,15 @@ function retreatTune() {
   paintTuneAsk();
 }
 
+function bothLine(take, alone) {
+  if (!take || (!(take.hz > 0) && !(take.droneHz > 0) && !(take.secondHz > 0))) return "With the drone · not recorded";
+  if (!(take.droneHz > 0)) return `With the drone · ${hzWords(take.hz, take.secondHz)}`;
+  if (take.hz > 0) return `With the drone · note ${voiceWords(take.hz)} · drone ${voiceWords(take.droneHz)}`;
+  if (alone?.hz && nearHz(alone.hz, take.droneHz, 50)) return `With the drone · same as the drone · ${voiceWords(take.droneHz)}`;
+  if (alone?.hz && integerHarmonic(alone.hz, take.droneHz)) return `With the drone · note is the drone's octave · drone ${voiceWords(take.droneHz)}`;
+  return `With the drone · drone ${voiceWords(take.droneHz)} · note not heard`;
+}
+
 function tuneReport() {
   const flute = currentFlute();
   const plan = tunePlan();
@@ -1465,19 +1586,23 @@ function tuneReport() {
     return {
       step: i + 1,
       fingering: stepTitle(step),
-      drone: step.kind !== "note",
+      kind: step.kind,
       hz: take?.hz || null,
       note: take?.hz ? noteOf(take.hz) : null,
+      droneHz: take?.droneHz || null,
+      droneNote: take?.droneHz ? noteOf(take.droneHz) : null,
       secondHz: take?.secondHz || null,
       secondNote: take?.secondHz ? noteOf(take.secondHz) : null,
     };
   });
   const lines = [flute.title, ""];
-  for (const row of takes) {
-    const heard = row.hz ? `${Math.round(row.hz)} Hz · ${row.note}` : "not recorded";
-    const extra = row.secondHz ? ` · and ${Math.round(row.secondHz)} Hz · ${row.secondNote}` : "";
-    lines.push(`${row.fingering}: ${heard}${extra}`);
-  }
+  takes.forEach((row, i) => {
+    if (row.kind === "both") {
+      lines.push(`${row.fingering}: ${bothLine(tuneTakes[i], tuneTakes[i - 1])}`);
+      return;
+    }
+    lines.push(`${row.fingering}: ${row.hz ? `${Math.round(row.hz)} Hz · ${row.note}` : "not recorded"}`);
+  });
   return {
     payload: { flute: flute.id, title: flute.title, recordedAt: new Date().toISOString(), takes },
     text: lines.join("\n"),
