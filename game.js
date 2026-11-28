@@ -31,6 +31,60 @@ const FLUTES = {
     names: ["F#5", "F5", "D#5", "C#5", "B4", "A4", "F#4"],
     art: "assets/flute-fs4.png",
   },
+  pipe: {
+    id: "pipe",
+    name: "A4 pipe",
+    title: "A4 pipe",
+    line: "Six holes, covered from the mouth. One barrel, the same scale as the A4 drone, and no second pipe.",
+    drone: null,
+    notes: [880, 783.99, 739.99, 659.25, 587.33, 523.25, 440],
+    names: ["A5", "G5", "F#5", "E5", "D5", "C5", "A4"],
+    art: "assets/flute-pipe.svg",
+    holes: [
+      [50, 47.5],
+      [50, 53.2],
+      [50, 58.8],
+      [50, 64.4],
+      [50, 70],
+      [50, 75.6],
+    ],
+  },
+  recorder: {
+    id: "recorder",
+    name: "Recorder",
+    title: "Soprano recorder",
+    line: "Thumb stays down. Cover from the mouth: C, B, A, G, then forked F, E, and D. The little finger stays up.",
+    drone: null,
+    notes: [1046.5, 987.77, 880, 783.99, 698.46, 659.25, 587.33],
+    names: ["C6", "B5", "A5", "G5", "F5", "E5", "D5"],
+    art: "assets/flute-recorder.svg",
+    holes: [
+      [50, 47.5],
+      [50, 53.2],
+      [50, 58.8],
+      [50, 64.4],
+      [50, 70],
+      [50, 75.6],
+    ],
+    masks: { 4: [0, 1, 2, 3, 5] },
+    lessons: [
+      { covers: 0, hint: "Thumb down. Leave every finger hole open." },
+      { covers: 1, hint: "Thumb down. Cover the hole nearest your mouth." },
+      { covers: 2, hint: "Thumb down. Cover two holes from the mouth." },
+      { covers: 3, hint: "Thumb down. Cover three holes. That is the left hand." },
+      { covers: 4, hint: "Thumb down. Cover four holes, skip one, and cover the next. That fork is F." },
+      { covers: 5, hint: "Thumb down. Cover five holes from the mouth." },
+      { covers: 6, hint: "Thumb down. Cover all six. The little finger stays up." },
+    ],
+    doneHint: "Thumb stays down. F is forked: four holes, skip one, cover the next.",
+    songLines: {
+      home: "The low D and the open C.",
+      ember: "A small phrase that settles on the low D.",
+    },
+    albumLines: {
+      dusk: "A phrase, then home on the low D.",
+    },
+  },
 };
 const SHUT_FLUTES = [
   { name: "G" },
@@ -72,7 +126,7 @@ function applyStoredTune() {
   for (const flute of Object.values(FLUTES)) {
     const row = saved[flute.id];
     if (!row) continue;
-    if (row.drone > 50 && row.drone < 4000) flute.drone = row.drone;
+    if (FACTORY[flute.id].drone > 50 && row.drone > 50 && row.drone < 4000) flute.drone = row.drone;
     if (Array.isArray(row.notes)) {
       row.notes.forEach((hz, i) => {
         if (hz > 50 && hz < 4000 && i < flute.notes.length) flute.notes[i] = hz;
@@ -112,6 +166,45 @@ function currentFlute() {
   return FLUTES[fluteId];
 }
 
+function hasDrone(flute = currentFlute()) {
+  return flute.drone > 50 && flute.drone < 4000;
+}
+
+function lowHz(flute = currentFlute()) {
+  return flute.notes[flute.notes.length - 1];
+}
+
+function holeMask(covers, flute = currentFlute()) {
+  if (covers == null) return [];
+  const custom = flute.masks && flute.masks[covers];
+  if (custom) return custom;
+  const mask = [];
+  for (let i = 0; i < covers; i++) mask.push(i);
+  return mask;
+}
+
+function activeLessons(flute = currentFlute()) {
+  return flute.lessons || LESSONS;
+}
+
+function songBlurb(song) {
+  const flute = currentFlute();
+  if (!hasDrone(flute)) {
+    if (flute.songLines && flute.songLines[song.id]) return flute.songLines[song.id];
+    if (song.plain) return song.plain;
+  }
+  return song.blurb;
+}
+
+function albumLine(album) {
+  const flute = currentFlute();
+  if (!hasDrone(flute)) {
+    if (flute.albumLines && flute.albumLines[album.id]) return flute.albumLines[album.id];
+    if (album.plain) return album.plain;
+  }
+  return album.line;
+}
+
 function shownNote(id) {
   const info = PITCHES[id];
   if (!info) return id || "";
@@ -127,6 +220,7 @@ const SONGS = [
     id: "walk",
     title: "The Walk",
     blurb: "Each fingering twice: once with the drone, once without.",
+    plain: "Each fingering twice.",
     level: "Easy",
     bpm: 64,
     notes: [
@@ -224,6 +318,7 @@ const SONGS = [
     id: "river",
     title: "River Stones",
     blurb: "Short notes, and the drone comes up for air.",
+    plain: "Short notes down the barrel and back.",
     level: "Medium",
     bpm: 96,
     notes: [
@@ -278,6 +373,7 @@ const SONGS = [
     id: "ford",
     title: "The Ford",
     blurb: "Step across, then the drone holds the far bank.",
+    plain: "Step across, then hold the far bank.",
     level: "Easy",
     bpm: 72,
     notes: [
@@ -310,6 +406,7 @@ const SONGS = [
     id: "held",
     title: "Held",
     blurb: "The drone stays. The melody answers it.",
+    plain: "A long line. The melody answers it.",
     level: "Easy",
     bpm: 60,
     notes: [
@@ -325,6 +422,7 @@ const SONGS = [
     id: "under",
     title: "Underneath",
     blurb: "Short notes over a drone that does not let go.",
+    plain: "Short notes that do not let go.",
     level: "Medium",
     bpm: 80,
     notes: [
@@ -346,9 +444,9 @@ const SONGS = [
 const ALBUMS = [
   { id: "barrel", title: "First Barrel", line: "Learn the holes from the mouth down.", wash: "gold", songs: ["walk", "down"] },
   { id: "climb", title: "The Climb", line: "Lift the fingers until the flute is open.", wash: "clay", songs: ["climb", "home"] },
-  { id: "river", title: "River", line: "Short steps, and the drone comes up for air.", wash: "river", songs: ["river", "ford"] },
+  { id: "river", title: "River", line: "Short steps, and the drone comes up for air.", plain: "Short steps along the scale.", wash: "river", songs: ["river", "ford"] },
   { id: "dusk", title: "Dusk", line: "A phrase, then home on the low A.", wash: "dusk", songs: ["dusk", "ember"] },
-  { id: "drone", title: "The Drone", line: "The other barrel, held while the melody moves.", wash: "deep", songs: ["held", "under"] },
+  { id: "drone", title: "The Drone", line: "The other barrel, held while the melody moves.", plain: "Long notes under a moving melody.", wash: "deep", songs: ["held", "under"] },
 ];
 
 const HOLES = [
@@ -476,7 +574,10 @@ const freeCtx = freeCanvas.getContext("2d");
 
 function mountHoles(root) {
   const box = root.querySelector(".holes");
-  HOLES.forEach(([x, y], i) => {
+  if (!box) return;
+  const spots = currentFlute().holes || HOLES;
+  box.replaceChildren();
+  spots.forEach(([x, y], i) => {
     const el = document.createElement("i");
     el.dataset.i = String(i);
     el.style.left = x + "%";
@@ -485,17 +586,26 @@ function mountHoles(root) {
   });
 }
 
+function layoutHoles() {
+  for (const id of ["title-flute", "play-flute", "free-flute", "tutorial-flute", "tune-flute"]) {
+    const root = $(id);
+    if (root) mountHoles(root);
+  }
+}
+
 function paintFlute(root, player, target, drone) {
+  const want = target == null ? null : holeMask(target);
+  const have = player == null ? null : holeMask(player);
   root.querySelectorAll(".hole, .holes i").forEach((hole) => {
     const i = Number(hole.dataset.i);
-    const want = target != null && i < target;
-    const have = player != null && i < player;
-    const wrong = have && target != null && !want;
-    hole.classList.toggle("target", want);
+    const onWant = want != null && want.includes(i);
+    const onHave = have != null && have.includes(i);
+    const wrong = onHave && want != null && !onWant;
+    hole.classList.toggle("target", onWant);
     hole.classList.toggle("wrong", wrong);
-    hole.classList.toggle("covered", have && !wrong);
+    hole.classList.toggle("covered", onHave && !wrong);
   });
-  root.querySelector(".glow")?.classList.toggle("on", drone);
+  root.querySelector(".glow")?.classList.toggle("on", Boolean(drone) && hasDrone());
   root.querySelector(".open-mark")?.classList.toggle("on", target === 0);
 }
 
@@ -564,7 +674,7 @@ function blip(freq, when, gain, dur, bus) {
 }
 
 function tuneDroneVoice() {
-  if (!droneOsc || !audioCtx) return;
+  if (!droneOsc || !audioCtx || !hasDrone()) return;
   const hz = currentFlute().drone;
   const t = audioCtx.currentTime;
   droneOsc.frequency.setValueAtTime(hz, t);
@@ -609,6 +719,7 @@ function playerCovers() {
 }
 
 function playerDrone() {
+  if (!hasDrone()) return false;
   if (micOn) return micDrone;
   return droneHeld;
 }
@@ -628,7 +739,7 @@ function lanePlayed(lane, covers, drone) {
   if (lane === DRONE_LANE) return Boolean(drone);
   if (covers == null) return false;
   if (lane === OPEN_LANE) return true;
-  return lane < covers;
+  return holeMask(covers).includes(lane);
 }
 
 function expectation(beat) {
@@ -659,7 +770,7 @@ function youVerdict(beat) {
   const expect = expectation(beat);
   if (!expect.active) return "you";
   const melodyOk = !expect.melody || covers === expect.melody.covers;
-  const droneOk = expect.drone ? drone : !drone;
+  const droneOk = !hasDrone() || (expect.drone ? drone : !drone);
   return melodyOk && droneOk ? "right" : "wrong";
 }
 
@@ -704,8 +815,9 @@ function startSong(id) {
   keepAwake();
   audioCtx.resume();
   song = SONGS.find((s) => s.id === id);
-  chart = song.notes.map(([pitch, t, d]) => {
+  chart = song.notes.flatMap(([pitch, t, d]) => {
     if (pitch === "drone") {
+      if (!hasDrone()) return [];
       return {
         kind: "drone",
         pitch: "Drone",
@@ -755,7 +867,7 @@ function startSong(id) {
   $("combo").classList.remove("hot");
   $("score").textContent = "0";
   $("song-name").textContent = song.title;
-  $("song-blurb").textContent = song.blurb;
+  $("song-blurb").textContent = songBlurb(song);
   showScreen("screen-play");
   setPauseButton(false);
   cancelAnimationFrame(raf);
@@ -942,13 +1054,17 @@ function resize() {
 
 function paintTutorial() {
   const flute = currentFlute();
-  const lesson = LESSONS[tutorialStep];
+  const lessons = activeLessons();
+  const lesson = lessons[tutorialStep];
   const done = tutorialPhase === "done";
   $("tutorial-title").textContent = "Tutorial";
-  $("tutorial-blurb").textContent = done ? flute.title : `${tutorialStep + 1} / ${LESSONS.length}`;
+  $("tutorial-blurb").textContent = done ? flute.title : `${tutorialStep + 1} / ${lessons.length}`;
   $("tutorial-note").textContent = done ? "The barrel" : flute.names[lesson.covers];
   $("tutorial-hint").textContent = done
-    ? "Seven fingerings, from the mouth down. The drone is the other barrel, and it can sit under any of them."
+    ? flute.doneHint ||
+      (hasDrone()
+        ? "Seven fingerings, from the mouth down. The drone is the other barrel, and it can sit under any of them."
+        : "Seven fingerings, from the mouth down. One barrel, so the drone line rests.")
     : lesson.hint;
   $("tutorial-key").textContent = done ? "" : `Key ${lesson.covers}`;
   $("tutorial-key").classList.toggle("hidden", done);
@@ -962,7 +1078,7 @@ function advanceTutorial() {
   tutorialHold = 0;
   tutorialAdvanceAt = 0;
   if (tutorialPhase === "done") return;
-  if (tutorialStep >= LESSONS.length - 1) {
+  if (tutorialStep >= activeLessons().length - 1) {
     tutorialPhase = "done";
     paintTutorial();
     return;
@@ -1006,7 +1122,7 @@ function paintTuner(cents, idle) {
 
 function tutorialFrame() {
   if (!tutorialOn) return;
-  const lesson = LESSONS[tutorialStep];
+  const lesson = activeLessons()[tutorialStep];
   const covers = playerCovers();
   const drone = playerDrone();
   const heard = $("tutorial-heard");
@@ -1058,24 +1174,32 @@ function startTutorial() {
 const TUNE_FINGERS = ["All open", "The top hole", "Two holes", "Three holes", "Four holes", "Five holes", "All covered"];
 const TAKE_KEY = "flute-hero-tune-takes";
 
+function fingeringHint(lesson) {
+  if (currentFlute().lessons) return lesson.hint;
+  if (lesson.covers === 6 && hasDrone()) return "Cover all six holes on the melody barrel.";
+  return lesson.hint;
+}
+
 function tunePlan() {
-  const steps = [
-    {
+  const steps = [];
+  if (hasDrone()) {
+    steps.push({
       kind: "drone",
       ask: "The drone",
       name: "Drone",
       hint: "Play only the drone barrel. Leave the melody silent.",
-    },
-  ];
-  for (const lesson of LESSONS) {
-    const closed = lesson.covers === 6 ? "Cover all six holes on the melody barrel." : lesson.hint;
+    });
+  }
+  for (const lesson of activeLessons()) {
+    const closed = fingeringHint(lesson);
     steps.push({
       kind: "note",
       covers: lesson.covers,
       ask: "The note",
       name: TUNE_FINGERS[lesson.covers],
-      hint: `${closed} Leave the drone off.`,
+      hint: hasDrone() ? `${closed} Leave the drone off.` : closed,
     });
+    if (!hasDrone()) continue;
     steps.push({
       kind: "both",
       covers: lesson.covers,
@@ -1470,7 +1594,9 @@ function paintTuneReview() {
   lead.className = "tune-lead";
   lead.textContent = any
     ? "What was played. The note beside each pitch is the nearest name."
-    : "Play each fingering alone, then the same fingering with the drone.";
+    : hasDrone()
+      ? "Play each fingering alone, then the same fingering with the drone."
+      : "Play each fingering alone.";
   const heading = document.createElement("h2");
   heading.textContent = currentFlute().title;
   const rows = [heading, lead];
@@ -1481,11 +1607,14 @@ function paintTuneReview() {
     title.textContent = step.kind === "note" ? step.name : stepTitle(step);
     const lines = [];
     if (step.kind === "drone") lines.push(tuneLine(tuneTakes[i]?.hz ? hzWords(tuneTakes[i].hz, tuneTakes[i].secondHz) : "Not recorded"));
-    else {
+    else if (plan[i + 1]?.kind === "both") {
       const alone = tuneTakes[i];
       const pair = tuneTakes[i + 1];
       lines.push(tuneLine(alone?.hz ? `Alone · ${hzWords(alone.hz, alone.secondHz)}` : "Alone · not recorded"));
       lines.push(tuneLine(bothLine(pair, alone)));
+    } else {
+      const alone = tuneTakes[i];
+      lines.push(tuneLine(alone?.hz ? hzWords(alone.hz, alone.secondHz) : "Not recorded"));
     }
     article.append(title, ...lines);
     rows.push(article);
@@ -1707,9 +1836,7 @@ function laneColor(lane, alpha = 1) {
 
 function noteLanes(note) {
   if (note.kind === "drone") return [DRONE_LANE];
-  const lanes = [OPEN_LANE];
-  for (let i = 0; i < (note.covers || 0); i++) lanes.push(i);
-  return lanes;
+  return [OPEN_LANE, ...holeMask(note.covers)];
 }
 
 function trackIndex(lane) {
@@ -1719,7 +1846,8 @@ function trackIndex(lane) {
 }
 
 function allTracks() {
-  return [DRONE_LANE, OPEN_LANE, 0, 1, 2, 3, 4, 5];
+  const melody = [OPEN_LANE, 0, 1, 2, 3, 4, 5];
+  return hasDrone() ? [DRONE_LANE, ...melody] : melody;
 }
 
 function fluteColumn(canvasEl = canvas, fluteId = "play-flute") {
@@ -2183,19 +2311,21 @@ function pickMelody(freq, sampleRate, fftSize) {
     }
   }
   if (!melody && lowNear) melody = low;
-  const beside = melody && melody.covers !== 6 ? melody.target : 0;
-  const droneHit = droneStands(freq, sampleRate, fftSize, flute.drone, beside);
-  const droneNear = droneHit.prom >= PEAKS2_PROM && droneHit.near;
   let drone = false;
-  if (melody && melody.covers !== 6) drone = droneNear && droneHit.db >= melody.db - 20;
-  else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
+  if (hasDrone(flute)) {
+    const beside = melody && melody.covers !== 6 ? melody.target : 0;
+    const droneHit = droneStands(freq, sampleRate, fftSize, flute.drone, beside);
+    const droneNear = droneHit.prom >= PEAKS2_PROM && droneHit.near;
+    if (melody && melody.covers !== 6) drone = droneNear && droneHit.db >= melody.db - 20;
+    else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
+  }
   return { melody, drone, low, flute };
 }
 
 function heardMelody(freq, sampleRate, fftSize) {
   const { melody, drone, low, flute } = pickMelody(freq, sampleRate, fftSize);
   const melodyDb = melody ? melody.db : -120;
-  const droneHz = Math.round(flute.drone);
+  const droneHz = Math.round(hasDrone(flute) ? flute.drone : lowHz(flute));
   if (!melody) {
     return {
       covers: null,
@@ -2221,8 +2351,9 @@ function bandWindows(flute) {
     .map((hz, covers) => ({ hz, covers }))
     .filter((note) => note.covers !== 6)
     .sort((a, b) => a.hz - b.hz);
+  const floor = lowHz(flute);
   const bands = melody.map((note, i) => {
-    const below = i === 0 ? flute.drone : melody[i - 1].hz;
+    const below = i === 0 ? floor : melody[i - 1].hz;
     const above = i === melody.length - 1 ? note.hz * 1.24 : melody[i + 1].hz;
     return {
       covers: note.covers,
@@ -2231,7 +2362,7 @@ function bandWindows(flute) {
       hi: i === melody.length - 1 ? note.hz * 1.1 : note.hz + (above - note.hz) * 0.42,
     };
   });
-  return { bands, droneLo: flute.drone * 0.92, droneHi: flute.drone * 1.068 };
+  return { bands, droneLo: floor * 0.92, droneHi: floor * 1.068 };
 }
 
 function bandPeak(freq, sampleRate, fftSize, lo, hi) {
@@ -2256,7 +2387,7 @@ function hearBands(freq, sampleRate, fftSize) {
   const melody = best && best.db > -50 && !octaveOfDrone ? best : null;
   const melodyDb = best ? best.db : -120;
   if (melody) {
-    const drone = droneDb > -46 && droneDb > melody.db - 14;
+    const drone = hasDrone() && droneDb > -46 && droneDb > melody.db - 14;
     return {
       covers: melody.covers,
       drone,
@@ -2270,13 +2401,15 @@ function hearBands(freq, sampleRate, fftSize) {
     const lowId = LANES[6];
     return {
       covers: 6,
-      drone: true,
+      drone: hasDrone(),
       label: lowId,
       melodyDb,
       droneDb,
-      detail: octaveOfDrone
-        ? `${shownNote(best.id)} sat on the drone's octave, so this is ${shownNote(lowId)} and the drone`
-        : `${Math.round(flute.drone)} Hz ${Math.round(droneDb)} dB · the low note and the drone share this pitch`,
+      detail: hasDrone()
+        ? octaveOfDrone
+          ? `${shownNote(best.id)} sat on the drone's octave, so this is ${shownNote(lowId)} and the drone`
+          : `${Math.round(lowHz())} Hz ${Math.round(droneDb)} dB · the low note and the drone share this pitch`
+        : `${shownNote(lowId)} ${Math.round(droneDb)} dB`,
     };
   }
   return {
@@ -2338,7 +2471,7 @@ function hearHeld(freq, sampleRate, fftSize) {
   }
   const others = flute.notes.filter((_, covers) => covers !== 6);
   const droneProm = low.db - apartFromScale(freq, sampleRate, fftSize, low.hz, others);
-  const droneNear = Math.abs(low.hz - flute.drone) <= 22 && droneProm >= 7;
+  const droneNear = hasDrone() && Math.abs(low.hz - flute.drone) <= 22 && droneProm >= 7;
   let upper = pool.filter((tone) => tone.covers !== 6);
   if (droneNear) {
     const voiced = upper.filter((tone) => !dronePartial(tone, low.hz) || tone.db >= low.db + 3);
@@ -2350,9 +2483,9 @@ function hearHeld(freq, sampleRate, fftSize) {
   let drone = false;
   if (!melody && droneNear) melody = low;
   if (melody && melody.covers !== 6) drone = droneNear && low.db >= melody.db - 22;
-  else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
+  else if (hasDrone() && melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
   const melodyDb = melody ? melody.db : -120;
-  const droneHz = Math.round(flute.drone);
+  const droneHz = Math.round(hasDrone(flute) ? flute.drone : lowHz(flute));
   if (!melody) {
     return {
       covers: null,
@@ -2402,14 +2535,14 @@ function hearPeaks(freq, sampleRate, fftSize) {
   let melody = null;
   const pick = upper.length ? upper : pool;
   for (const tone of pick) if (!melody || tone.db > melody.db) melody = tone;
-  const droneTone = low.prom >= TONE_PROM && Math.abs(low.hz - flute.drone) <= 22;
+  const droneTone = hasDrone() && low.prom >= TONE_PROM && Math.abs(low.hz - flute.drone) <= 22;
   let drone = false;
   if (!melody && droneTone) melody = low;
   if (melody && melody.covers !== 6) drone = droneTone;
-  else if (melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
+  else if (hasDrone() && melody && melody.covers === 6) drone = secondBarrel(freq, sampleRate, fftSize, low);
   const melodyDb = melody ? melody.db : -120;
   const droneDb = low.db;
-  const droneHz = Math.round(flute.drone);
+  const droneHz = Math.round(hasDrone(flute) ? flute.drone : lowHz(flute));
   if (!melody) {
     return {
       covers: null,
@@ -2546,10 +2679,10 @@ function hearWave(hz, freq, sampleRate, fftSize) {
   const tone = fatTone(freq, sampleRate, fftSize, target);
   let drone = false;
   let droneDb = -120;
-  if (covers === 6) {
+  if (hasDrone() && covers === 6) {
     drone = secondBarrel(freq, sampleRate, fftSize, { target, db: tone.db, prom: tone.prom, hz: tone.hz });
     droneDb = tone.db;
-  } else {
+  } else if (hasDrone()) {
     const stood = droneStands(freq, sampleRate, fftSize, flute.drone, target);
     droneDb = stood.db;
     drone = stood.prom >= 3 && stood.near && stood.db > -64 && stood.db >= tone.db - 20;
@@ -3662,7 +3795,7 @@ function xPast(time, now, hitX, width) {
 function expandEvent(ev) {
   const out = [];
   if (!ev || !(ev.d > 0)) return out;
-  if (ev.drone) out.push({ kind: "drone", t: ev.t, d: ev.d });
+  if (ev.drone && hasDrone()) out.push({ kind: "drone", t: ev.t, d: ev.d });
   if (ev.pitch && PITCHES[ev.pitch]) out.push({ kind: "melody", covers: PITCHES[ev.pitch].covers, t: ev.t, d: ev.d });
   return out;
 }
@@ -3844,7 +3977,7 @@ function paintAlbum() {
   heading.textContent = album.title;
   const line = document.createElement("p");
   line.className = "story-line";
-  line.textContent = album.line;
+  line.textContent = albumLine(album);
   const list = document.createElement("div");
   list.className = "story-songs";
   for (const id of album.songs) {
@@ -3856,7 +3989,7 @@ function paintAlbum() {
     const title = document.createElement("b");
     title.textContent = tune.title;
     const blurb = document.createElement("small");
-    blurb.textContent = tune.blurb;
+    blurb.textContent = songBlurb(tune);
     copy.append(title, blurb);
     const level = document.createElement("em");
     level.textContent = tune.level;
@@ -3872,7 +4005,7 @@ function paintAlbum() {
 let titleCovers = 0;
 function tickTitle() {
   titleCovers = (titleCovers + 1) % 7;
-  const drone = titleCovers === 6 || titleCovers === 0;
+  const drone = hasDrone() && (titleCovers === 6 || titleCovers === 0);
   paintFlute($("title-flute"), titleCovers, titleCovers, drone);
 }
 
@@ -3900,7 +4033,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "Space") {
     e.preventDefault();
-    if (e.repeat) return;
+    if (e.repeat || !hasDrone()) return;
     droneHeld = true;
     if (audioCtx && !micOn) blip(currentFlute().drone, undefined, 0.06, 0.14, master);
     return;
@@ -3995,11 +4128,7 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("resize", resize);
 
-mountHoles($("title-flute"));
-mountHoles($("play-flute"));
-mountHoles($("free-flute"));
-mountHoles($("tutorial-flute"));
-mountHoles($("tune-flute"));
+layoutHoles();
 paintFlute($("title-flute"), 0, 0, false);
 paintAlbum();
 function buildLabel() {
@@ -4365,7 +4494,10 @@ $("tutorial-next").addEventListener("click", () => {
 
 function paintDronePill() {
   const pill = $("drone-pill");
-  if (pill) pill.textContent = `Drone · ${spellHz(currentFlute().drone).name}`;
+  if (!pill) return;
+  const on = hasDrone();
+  pill.classList.toggle("hidden", !on);
+  if (on) pill.textContent = `Drone · ${spellHz(currentFlute().drone).name}`;
 }
 
 function selectFlute(id) {
@@ -4377,8 +4509,10 @@ function selectFlute(id) {
     /* the browser can refuse storage */
   }
   tuneDroneVoice();
+  layoutHoles();
   applyFluteArt();
   paintFluteScreen();
+  paintAlbum();
   if (tuneOn) {
     tuneFluteId = fluteId;
     tuneTakes = [];
@@ -4417,8 +4551,10 @@ function paintFluteScreen() {
   eye.className = "eyebrow";
   eye.textContent = "In hand";
   const heading = document.createElement("h2");
-  const sounding = spellHz(flute.drone).name;
-  heading.textContent = sounding === flute.name ? flute.title : `${sounding} drone`;
+  if (hasDrone(flute)) {
+    const sounding = spellHz(flute.drone).name;
+    heading.textContent = sounding === flute.name ? flute.title : `${sounding} drone`;
+  } else heading.textContent = flute.title;
   const line = document.createElement("p");
   line.textContent = flute.line;
   const tune = document.createElement("button");

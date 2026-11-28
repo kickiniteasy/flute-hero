@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 141 1058" fill="none">
+  <defs>
+    <linearGradient id="body" x1="48" y1="0" x2="96" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f6d48a"/>
+      <stop offset="0.45" stop-color="#e2b15a"/>
+      <stop offset="1" stop-color="#b8883a"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="70" y1="36" x2="70" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f8e2b0"/>
+      <stop offset="1" stop-color="#d7a44c"/>
+    </linearGradient>
+  </defs>
+  <rect x="46" y="148" width="50" height="860" rx="25" fill="url(#body)"/>
+  <rect x="44" y="36" width="54" height="128" rx="26" fill="url(#cap)"/>
+  <rect x="52" y="118" width="38" height="16" rx="4" fill="#2a1c10"/>
+  <rect x="58" y="154" width="26" height="10" rx="3" fill="#f4ecdf" opacity="0.35"/>
+  <rect x="50" y="968" width="42" height="18" rx="8" fill="#c4923e"/>
+  <g fill="#1a100c" stroke="#8a6428" stroke-width="2">
+    <circle cx="70.5" cy="502.6" r="8"/>
+    <circle cx="70.5" cy="562.9" r="8"/>
+    <circle cx="70.5" cy="622.1" r="8"/>
+    <circle cx="70.5" cy="681.4" r="8"/>
+    <circle cx="70.5" cy="740.6" r="8"/>
+    <circle cx="70.5" cy="799.8" r="8"/>
+  </g>
+</svg>

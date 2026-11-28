@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 141 1058" fill="none">
+  <defs>
+    <linearGradient id="wood" x1="42" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f3d7a2"/>
+      <stop offset="0.4" stop-color="#e4b56a"/>
+      <stop offset="1" stop-color="#a87432"/>
+    </linearGradient>
+  </defs>
+  <path d="M78 28c8 10 12 28 10 48l-6 36H60l-8-36c-2-20 4-40 14-48 4-3 8-3 12 0z" fill="url(#wood)"/>
+  <rect x="48" y="108" width="46" height="900" rx="23" fill="url(#wood)"/>
+  <rect x="56" y="168" width="30" height="22" rx="3" fill="#24180f"/>
+  <path d="M56 190h30l-4 14H60z" fill="#f4ecdf" opacity="0.45"/>
+  <rect x="52" y="972" width="38" height="16" rx="7" fill="#c4923e"/>
+  <circle cx="96" cy="423" r="6.5" fill="#1a100c" stroke="#8a6428" stroke-width="2"/>
+  <g fill="#1a100c" stroke="#8a6428" stroke-width="2">
+    <circle cx="70.5" cy="502.6" r="8"/>
+    <circle cx="70.5" cy="562.9" r="8"/>
+    <circle cx="70.5" cy="622.1" r="8"/>
+    <circle cx="70.5" cy="681.4" r="8"/>
+    <circle cx="70.5" cy="740.6" r="8"/>
+    <circle cx="70.5" cy="799.8" r="8"/>
+  </g>
+</svg>
